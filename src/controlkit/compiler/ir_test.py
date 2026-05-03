@@ -206,3 +206,60 @@ class Clip(Expr):
     def __repr__(self) -> str: 
         return f"(clip {self.value} to [{self.lower}, {self.upper}])"
     
+
+class DynamicsKind(StrEnum):
+    #linear-system dynamics forms 
+    CONTINUOUS = "continuous" 
+    DISCRETE = "discrete"
+
+@dataclass(frozen=True)
+class LinearSystemIR:
+    # Linear system `x_dot = Ax + Bu` or `x_next = Ax + Bu`
+    state: Vector 
+    control: Vector 
+    a_matrix: Matrix 
+    b_matrix: Matrix 
+    dynamics: DynamicsKind 
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.state, Vector):
+            raise IRValidationError(f"State must be a vector: {self.state}") 
+        if not isinstance(self.control, Vector):
+            raise IRValidationError(f"Control must be a vector: {self.control}")
+        if not isinstance(self.a_matrix, Matrix):
+            raise IRValidationError(f"A matrix must be a matrix: {self.a_matrix}")
+        if not isinstance(self.b_matrix, Matrix):
+            raise IRValidationError(f"B matrix must be a matrix: {self.b_matrix}")
+        
+        state_dim = self.state.dim 
+        control_dim = self.control.dim
+        if (self.a_matrix.rows, self.a_matrix.cols) != (state_dim, state_dim):
+            raise IRValidationError(f"A matrix shape must be ({state_dim}x{state_dim}): {self.a_matrix.shape}") 
+        if (self.b_matrix.rows, self.b_matrix.cols) != (state_dim, control_dim):
+            raise IRValidationError(f"B matrix shape must be ({state_dim}x{control_dim}): {self.b_matrix.shape}")   
+        
+        @property 
+        def expression(self) -> Add:
+            return Add(MatVecMul(self.a_matrix, self.state), MatVecMul(self.b_matrix, self.control)) 
+        
+        @property 
+        def lhs_name(self) -> str:
+            return "x_dot" if self.dynamics == DynamicsKind.CONTINUOUS else "x_next"
+        
+        def __repr__(self) -> str:
+            return f"{self.lhs_name} = {self.expression}" 
+        
+    
+@dataclass(frozen=True)
+class IRModule:
+    # a policy for backend-neutral representation
+    name: str 
+    policy: PolicyKind
+    metadata: Mapping[str, str] = field(default_factory=dict)
+    systems: tuple[LinearSystemIR, ...] = field(default_factory=tuple)  
+    control_laws: tuple[Expr, ...] = field(default_factory=tuple) 
+
+    def __repr__(self) -> str:
+        policy_name = getattar(self.policy, "value", str(self.policy))
+        return f"IRModule(name={self.name}, policy={policy_name}, systems={self.systems}, control_laws={self.control_laws})"    
+    
