@@ -1,15 +1,55 @@
-"""Compiler interfaces and placeholder pipeline."""
+#pipeline
 
 from __future__ import annotations
-
+from controlkit.compiler.ir import (
+    Add,
+    Clip,
+    ControlLaw,
+    DynamicsKind,
+    IRModule,
+    IRValidationError,
+    LinearSystemIR,
+    Matrix,
+    MatVecMul,
+    Neg,
+    ScalarConstant,
+    Shape,
+    Sub,
+    ValueKind,
+    Vector,
+    add,
+    clip,
+    matvec,
+    neg,
+    sub,
+)
 from controlkit.compiler.pipeline import CompileRequest, CompileResult, CompilerPipeline
 from controlkit.compiler.targets import TargetLanguage, TargetSpec
 
 __all__ = [
+    "Add",
+    "Clip",
     "CompileRequest",
     "CompileResult",
     "CompilerPipeline",
+    "ControlLaw",
+    "DynamicsKind",
+    "IRModule",
+    "IRValidationError",
+    "LinearSystemIR",
+    "Matrix",
+    "MatVecMul",
+    "Neg",
+    "ScalarConstant",
+    "Shape",
+    "Sub",
     "TargetLanguage",
     "TargetSpec",
+    "ValueKind",
+    "Vector",
+    "add",
+    "clip",
+    "matvec",
+    "neg",
+    "sub",
 ]
-
