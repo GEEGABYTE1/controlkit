@@ -263,3 +263,18 @@ class IRModule:
         policy_name = getattar(self.policy, "value", str(self.policy))
         return f"IRModule(name={self.name}, policy={policy_name}, systems={self.systems}, control_laws={self.control_laws})"    
     
+def matvec(matrix: Expr, vector: Expr) -> MatVecMul:
+    return MatVecMul(matrix, vector)
+
+def add(left: Expr, right: Expr) -> Add: 
+    return Add(left=left, right=right)
+
+def sub(left: Expr, right: Expr) -> Sub:
+    return Sub(left=left, right=right) 
+
+def neg(value: Expr) -> Neg:
+    return Neg(value=value) 
+
+def clip(value: Expr, lower: Expr | float, upper: Expr | float) -> Clip:
+    return Clip(value=value, lower=_coerce_bound(lower), upper=_coerce_bound(upper))
+
