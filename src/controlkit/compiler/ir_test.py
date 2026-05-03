@@ -149,7 +149,7 @@ class MatVecMul(Expr):
         return Shape.vector(self.matrix.shape.rows) 
 
     def __repr__(self) -> str: 
-        return F f"matvec({self.matrix}, {self.vector})"
+        return f"matvec({self.matrix}, {self.vector})"
 
     
 @dataclass(frozen=True)
@@ -278,3 +278,35 @@ def neg(value: Expr) -> Neg:
 def clip(value: Expr, lower: Expr | float, upper: Expr | float) -> Clip:
     return Clip(value=value, lower=_coerce_bound(lower), upper=_coerce_bound(upper))
 
+
+def _coerce_bound(bound: Expr | float) -> Expr:
+    if isinstance(bound, (int, float)):
+        return ScalarConstant(float(bound))
+    _require_expr(bound, "bound")
+    return bound 
+
+def _require_expr(value: object, name: str) -> None:
+    if not isinstance(value, Expr):
+        raise TypeError(f"{name} must be an Expr: got {type(value).__name__}") 
+
+def _validate_name(name: str) -> None:
+    if not isinstance(name, str):
+        raise TypeError(f"Name must be a string: got {type(name).__name__}") 
+    if not name:
+        raise IRValidationError("Name cannot be empty") 
+
+def _validate_same_shape(left: Expr, right: Expr, operation: str) -> None:
+    _require_expr(left, "left")
+    _require_expr(right, "right")
+    if left.shape != right.shape:
+        raise IRValidationError(f"{operation.capitalize()} requires operands to have the same shape: {left.shape} vs {right.shape}")
+    
+
+def _validate_bound(value: Expr, bound: Expr, name:str) -> None:
+    _require_expr(bound, name)
+    if bound.shape.kind is ValueKind.SCALAR:
+        return 
+
+    if bound.shape != value.shape:
+        raise IRValidationError(f"Bound '{name}' must be either scalar or have the same shape as value: {bound.shape} vs {value.shape}") 
+    
