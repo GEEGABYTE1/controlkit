@@ -1,5 +1,4 @@
-"""Policy frontend interfaces."""
-
+#policy frontend interface
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -12,8 +11,6 @@ if TYPE_CHECKING:
 
 
 class PolicyKind(StrEnum):
-    """Policy families ControlKit is expected to support."""
-
     PID = "pid"
     LQR = "lqr"
     MPC = "mpc"
@@ -21,8 +18,6 @@ class PolicyKind(StrEnum):
 
 
 class PolicyFrontend(Protocol):
-    """Frontend contract for policy parsers and lowerers."""
-
     kind: PolicyKind
 
     def load(self, spec_path: Path) -> "PolicySpec":
@@ -34,7 +29,5 @@ class PolicyFrontend(Protocol):
 
 @dataclass(frozen=True)
 class PolicySpec:
-    """Minimal policy specification wrapper used until schema validation lands."""
-
     name: str
     source_path: Path

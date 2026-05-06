@@ -1,18 +1,15 @@
-"""MPC policy frontend placeholder."""
+#mpc placeholder
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-
 from controlkit.compiler.ir import IRModule
 from controlkit.policies.base import PolicyKind, PolicySpec
 
 
 @dataclass(frozen=True)
 class MpcPolicy:
-    """Placeholder frontend for model predictive controllers."""
-
     kind: PolicyKind = PolicyKind.MPC
 
     def load(self, spec_path: Path) -> PolicySpec:

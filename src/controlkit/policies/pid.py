@@ -1,18 +1,15 @@
-"""PID policy frontend placeholder."""
+#pid placeholder
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-
 from controlkit.compiler.ir import IRModule
 from controlkit.policies.base import PolicyKind, PolicySpec
 
 
 @dataclass(frozen=True)
 class PidPolicy:
-    """Placeholder frontend for PID controllers."""
-
     kind: PolicyKind = PolicyKind.PID
 
     def load(self, spec_path: Path) -> PolicySpec:

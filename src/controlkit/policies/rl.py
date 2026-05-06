@@ -1,4 +1,4 @@
-"""RL policy frontend placeholder."""
+#rl placeholder
 
 from __future__ import annotations
 
@@ -11,8 +11,6 @@ from controlkit.policies.base import PolicyKind, PolicySpec
 
 @dataclass(frozen=True)
 class RlPolicy:
-    """Placeholder frontend for reinforcement-learning policies."""
-
     kind: PolicyKind = PolicyKind.RL
 
     def load(self, spec_path: Path) -> PolicySpec:
