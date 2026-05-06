@@ -1,4 +1,4 @@
-"""Compiler pipeline skeleton."""
+#pipeline skeleton
 
 from __future__ import annotations
 
