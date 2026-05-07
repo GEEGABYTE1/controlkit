@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
+
 from controlkit.compiler.ir import ControlLaw, Expr, IRModule, Matrix, Vector, clip, matvec, neg
 from controlkit.policies.base import PolicyKind, PolicySpec
 
@@ -60,7 +61,12 @@ class LqrPolicy:
 
         state = Vector(spec.state_name, dim=spec.state_dim)
         control = Vector(spec.control_name, dim=spec.control_dim)
-        gain = Matrix(spec.gain_name, rows=spec.control_dim, cols=spec.state_dim)
+        gain = Matrix(
+            spec.gain_name,
+            rows=spec.control_dim,
+            cols=spec.state_dim,
+            values=spec.gain_matrix,
+        )
         expression: Expr = neg(matvec(gain, state))
 
         if spec.saturation is not None:
@@ -143,13 +149,15 @@ def _normalize_gain_matrix(gain_matrix: Sequence[Sequence[float]]) -> tuple[tupl
 
 
 def _normalize_saturation(
-    saturation: LqrSaturation | tuple[float, float] | None,) -> LqrSaturation | None:
+    saturation: LqrSaturation | tuple[float, float] | None,
+) -> LqrSaturation | None:
     if saturation is None or isinstance(saturation, LqrSaturation):
         return saturation
     if len(saturation) != 2:
         raise LqrSpecError("saturation tuple must contain lower and upper bounds")
     lower, upper = saturation
     return LqrSaturation(lower=float(lower), upper=float(upper))
+
 
 def _validate_gain_shape(
     gain_matrix: tuple[tuple[float, ...], ...],
@@ -164,13 +172,16 @@ def _validate_gain_shape(
             f"expected {expected_shape}, got {actual_shape}"
         )
 
+
 def _validate_positive_dim(value: int, name: str) -> None:
     if value <= 0:
         raise LqrSpecError(f"{name} must be positive")
 
+
 def _validate_name(value: str, name: str) -> None:
     if not value:
         raise LqrSpecError(f"{name} must be non-empty")
+
 
 def _validate_component_names(names: tuple[str, ...], expected_dim: int, field_name: str) -> None:
     if names and len(names) != expected_dim:
