@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from controlkit.backends.c import CBackend, CBackendError
 import pytest
 
+from controlkit.backends.c import CBackend, CBackendError
 from controlkit.compiler.ir import ControlLaw, IRModule, Matrix, Vector, matvec
 from controlkit.policies.base import PolicyKind
 from controlkit.policies.lqr import LqrPolicy
