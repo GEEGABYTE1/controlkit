@@ -1,4 +1,4 @@
-"""C code generation backend."""
+"""Rust code generation backend."""
 
 from __future__ import annotations
 
@@ -22,29 +22,26 @@ from controlkit.compiler.ir import (
 )
 
 
-class CBackendError(ValueError):
-    """Raised when an IR module cannot be lowered to C."""
+class RustBackendError(ValueError):
+    """Raised when an IR module cannot be lowered to Rust."""
 
 
 @dataclass(frozen=True)
-class CGeneratedArtifact:
-    """Generated C header/source pair."""
-    header_name: str
+class RustGeneratedArtifact:
+    """Generated Rust source artifact."""
+
     source_name: str
-    header: str
     source: str
 
-    def write_to(self, output_dir: Path) -> tuple[Path, Path]:
+    def write_to(self, output_dir: Path) -> Path:
         output_dir.mkdir(parents=True, exist_ok=True)
-        header_path = output_dir / self.header_name
         source_path = output_dir / self.source_name
-        header_path.write_text(self.header, encoding="utf-8")
         source_path.write_text(self.source, encoding="utf-8")
-        return header_path, source_path
+        return source_path
 
 
 @dataclass
-class _CValue:
+class _RustValue:
     name: str
     dim: int
 
@@ -63,46 +60,28 @@ class _EmitContext:
 
 
 @dataclass(frozen=True)
-class CBackend:
-    """Generate deterministic float32 C for supported ControlKit IR modules."""
+class RustBackend:
+    """Generate deterministic no_std-compatible Rust for supported ControlKit IR modules."""
 
     unroll_loops: bool = False
 
-    def generate(self, module: IRModule) -> CGeneratedArtifact:
+    def generate(self, module: IRModule) -> RustGeneratedArtifact:
         law = self._select_control_law(module)
         input_vector = self._select_input_vector(module, law)
-
         module_id = _sanitize_identifier(module.name)
-        header_name = f"{module_id}.h"
-        source_name = f"{module_id}.c"
-        function_name = f"{module_id}_control_step"
-        guard = f"CONTROLKIT_{module_id.upper()}_H"
-
         matrices = _collect_matrices(law.expression)
-        header = self._render_header(
-            guard=guard,
-            function_name=function_name,
-            input_vector=input_vector,
-            output_vector=law.output,
-        )
+
         source = self._render_source(
-            header_name=header_name,
-            function_name=function_name,
             input_vector=input_vector,
             output_vector=law.output,
             expression=law.expression,
             matrices=matrices,
         )
-        return CGeneratedArtifact(
-            header_name=header_name,
-            source_name=source_name,
-            header=header,
-            source=source,
-        )
+        return RustGeneratedArtifact(source_name=f"{module_id}.rs", source=source)
 
     def _select_control_law(self, module: IRModule) -> ControlLaw:
         if len(module.control_laws) != 1:
-            raise CBackendError("C backend currently supports exactly one control law")
+            raise RustBackendError("Rust backend currently supports exactly one control law")
         return module.control_laws[0]
 
     def _select_input_vector(self, module: IRModule, law: ControlLaw) -> Vector:
@@ -117,57 +96,24 @@ class CBackend:
                 dim=int(module.metadata["state_dim"]),
             )
         if len(vectors) != 1:
-            raise CBackendError("C backend currently supports exactly one input vector")
+            raise RustBackendError("Rust backend currently supports exactly one input vector")
         return next(iter(vectors.values()))
-
-    def _render_header(
-        self,
-        *,
-        guard: str,
-        function_name: str,
-        input_vector: Vector,
-        output_vector: Vector,
-    ) -> str:
-        return "\n".join(
-            [
-                f"#ifndef {guard}",
-                f"#define {guard}",
-                "",
-                "#include <stddef.h>",
-                "",
-                "#ifdef __cplusplus",
-                'extern "C" {',
-                "#endif",
-                "",
-                f"#define CONTROLKIT_STATE_DIM {input_vector.dim}u",
-                f"#define CONTROLKIT_CONTROL_DIM {output_vector.dim}u",
-                "",
-                (
-                    f"void {function_name}(const float {_sanitize_identifier(input_vector.name)}"
-                    f"[CONTROLKIT_STATE_DIM], float {_sanitize_identifier(output_vector.name)}"
-                    "[CONTROLKIT_CONTROL_DIM]);"
-                ),
-                "",
-                "#ifdef __cplusplus",
-                "}",
-                "#endif",
-                "",
-                f"#endif /* {guard} */",
-                "",
-            ]
-        )
 
     def _render_source(
         self,
         *,
-        header_name: str,
-        function_name: str,
         input_vector: Vector,
         output_vector: Vector,
         expression: Expr,
         matrices: tuple[Matrix, ...],
     ) -> str:
-        lines = [f'#include "{header_name}"', ""]
+        lines = [
+            "#![no_std]",
+            "",
+            f"pub const STATE_DIM: usize = {input_vector.dim};",
+            f"pub const CONTROL_DIM: usize = {output_vector.dim};",
+            "",
+        ]
         for matrix in matrices:
             lines.extend(_render_matrix(matrix))
             lines.append("")
@@ -175,40 +121,41 @@ class CBackend:
         input_name = _sanitize_identifier(input_vector.name)
         output_name = _sanitize_identifier(output_vector.name)
         lines.append(
-            f"void {function_name}(const float {input_name}[CONTROLKIT_STATE_DIM], "
-            f"float {output_name}[CONTROLKIT_CONTROL_DIM])"
+            f"pub fn control_step({input_name}: &[f32; STATE_DIM], "
+            f"{output_name}: &mut [f32; CONTROL_DIM]) {{"
         )
-        lines.append("{")
         ctx = _EmitContext(input_vector=input_vector, unroll_loops=self.unroll_loops)
         value = _emit_expr(expression, ctx)
         lines.extend(ctx.lines)
         if self.unroll_loops:
             for index in range(output_vector.dim):
-                lines.append(f"    {output_name}[{index}u] = {value.name}[{index}u];")
+                lines.append(f"    {output_name}[{index}] = {value.name}[{index}];")
         else:
-            lines.append("    for (size_t i = 0u; i < CONTROLKIT_CONTROL_DIM; ++i) {")
+            lines.append("    let mut i = 0usize;")
+            lines.append("    while i < CONTROL_DIM {")
             lines.append(f"        {output_name}[i] = {value.name}[i];")
+            lines.append("        i += 1;")
             lines.append("    }")
         lines.append("}")
         lines.append("")
         return "\n".join(lines)
 
 
-def _emit_expr(expr: Expr, ctx: _EmitContext) -> _CValue:
+def _emit_expr(expr: Expr, ctx: _EmitContext) -> _RustValue:
     if isinstance(expr, Vector):
         if expr.name != ctx.input_vector.name:
-            raise CBackendError(f"unsupported vector reference in expression: {expr.name}")
-        return _CValue(name=_sanitize_identifier(expr.name), dim=expr.dim)
+            raise RustBackendError(f"unsupported vector reference in expression: {expr.name}")
+        return _RustValue(name=_sanitize_identifier(expr.name), dim=expr.dim)
 
     if isinstance(expr, Zero):
         temp = ctx.new_temp()
-        ctx.lines.append(f"    float {temp}[{expr.shape.rows}u] = {{0.0f}};")
-        return _CValue(name=temp, dim=expr.shape.rows)
+        ctx.lines.append(f"    let {temp} = [0.0_f32; {expr.shape.rows}];")
+        return _RustValue(name=temp, dim=expr.shape.rows)
 
     if isinstance(expr, ScalarConstant):
         temp = ctx.new_temp()
-        ctx.lines.append(f"    float {temp}[1u] = {{{_float_literal(expr.value)}}};")
-        return _CValue(name=temp, dim=1)
+        ctx.lines.append(f"    let {temp} = [{_float_literal(expr.value)}; 1];")
+        return _RustValue(name=temp, dim=1)
 
     if isinstance(expr, MatVecMul):
         return _emit_matvec(expr, ctx)
@@ -216,128 +163,141 @@ def _emit_expr(expr: Expr, ctx: _EmitContext) -> _CValue:
     if isinstance(expr, Neg):
         value = _emit_expr(expr.value, ctx)
         temp = ctx.new_temp()
-        ctx.lines.append(f"    float {temp}[{value.dim}u];")
+        ctx.lines.append(f"    let mut {temp} = [0.0_f32; {value.dim}];")
         if ctx.unroll_loops:
             for index in range(value.dim):
-                ctx.lines.append(f"    {temp}[{index}u] = -{value.name}[{index}u];")
-            return _CValue(name=temp, dim=value.dim)
-        ctx.lines.append(f"    for (size_t i = 0u; i < {value.dim}u; ++i) {{")
+                ctx.lines.append(f"    {temp}[{index}] = -{value.name}[{index}];")
+            return _RustValue(name=temp, dim=value.dim)
+        ctx.lines.append("    let mut i = 0usize;")
+        ctx.lines.append(f"    while i < {value.dim} {{")
         ctx.lines.append(f"        {temp}[i] = -{value.name}[i];")
+        ctx.lines.append("        i += 1;")
         ctx.lines.append("    }")
-        return _CValue(name=temp, dim=value.dim)
+        return _RustValue(name=temp, dim=value.dim)
 
     if isinstance(expr, ScalarMul):
         scalar = _emit_expr(expr.scalar, ctx)
         value = _emit_expr(expr.value, ctx)
         if scalar.dim != 1:
-            raise CBackendError("scalar multiplication requires a scalar temporary")
+            raise RustBackendError("scalar multiplication requires a scalar temporary")
         temp = ctx.new_temp()
-        ctx.lines.append(f"    float {temp}[{value.dim}u];")
+        ctx.lines.append(f"    let mut {temp} = [0.0_f32; {value.dim}];")
         if ctx.unroll_loops:
             for index in range(value.dim):
                 ctx.lines.append(
-                    f"    {temp}[{index}u] = {scalar.name}[0u] * {value.name}[{index}u];"
+                    f"    {temp}[{index}] = {scalar.name}[0] * {value.name}[{index}];"
                 )
-            return _CValue(name=temp, dim=value.dim)
-        ctx.lines.append(f"    for (size_t i = 0u; i < {value.dim}u; ++i) {{")
-        ctx.lines.append(f"        {temp}[i] = {scalar.name}[0u] * {value.name}[i];")
+            return _RustValue(name=temp, dim=value.dim)
+        ctx.lines.append("    let mut i = 0usize;")
+        ctx.lines.append(f"    while i < {value.dim} {{")
+        ctx.lines.append(f"        {temp}[i] = {scalar.name}[0] * {value.name}[i];")
+        ctx.lines.append("        i += 1;")
         ctx.lines.append("    }")
-        return _CValue(name=temp, dim=value.dim)
+        return _RustValue(name=temp, dim=value.dim)
 
     if isinstance(expr, Add | Sub):
         left = _emit_expr(expr.left, ctx)
         right = _emit_expr(expr.right, ctx)
         if left.dim != right.dim:
-            raise CBackendError("elementwise expression dimensions must match")
+            raise RustBackendError("elementwise expression dimensions must match")
         temp = ctx.new_temp()
         op = "+" if isinstance(expr, Add) else "-"
-        ctx.lines.append(f"    float {temp}[{left.dim}u];")
+        ctx.lines.append(f"    let mut {temp} = [0.0_f32; {left.dim}];")
         if ctx.unroll_loops:
             for index in range(left.dim):
                 ctx.lines.append(
-                    f"    {temp}[{index}u] = {left.name}[{index}u] {op} {right.name}[{index}u];"
+                    f"    {temp}[{index}] = {left.name}[{index}] {op} {right.name}[{index}];"
                 )
-            return _CValue(name=temp, dim=left.dim)
-        ctx.lines.append(f"    for (size_t i = 0u; i < {left.dim}u; ++i) {{")
+            return _RustValue(name=temp, dim=left.dim)
+        ctx.lines.append("    let mut i = 0usize;")
+        ctx.lines.append(f"    while i < {left.dim} {{")
         ctx.lines.append(f"        {temp}[i] = {left.name}[i] {op} {right.name}[i];")
+        ctx.lines.append("        i += 1;")
         ctx.lines.append("    }")
-        return _CValue(name=temp, dim=left.dim)
+        return _RustValue(name=temp, dim=left.dim)
 
     if isinstance(expr, Clip):
         return _emit_clip(expr, ctx)
 
-    raise CBackendError(f"unsupported C expression: {type(expr).__name__}")
+    raise RustBackendError(f"unsupported Rust expression: {type(expr).__name__}")
 
 
-def _emit_matvec(expr: MatVecMul, ctx: _EmitContext) -> _CValue:
+def _emit_matvec(expr: MatVecMul, ctx: _EmitContext) -> _RustValue:
     if not isinstance(expr.matrix, Matrix):
-        raise CBackendError("C backend requires matrix operands to be named matrices")
+        raise RustBackendError("Rust backend requires matrix operands to be named matrices")
     if expr.matrix.values is None:
-        raise CBackendError(f"matrix {expr.matrix.name} has no numeric values for C generation")
+        raise RustBackendError(
+            f"matrix {expr.matrix.name} has no numeric values for Rust generation"
+        )
     vector = _emit_expr(expr.vector, ctx)
-    matrix_name = _sanitize_identifier(expr.matrix.name)
+    matrix_name = _sanitize_identifier(expr.matrix.name).upper()
     temp = ctx.new_temp()
-    ctx.lines.append(f"    float {temp}[{expr.matrix.rows}u];")
+    ctx.lines.append(f"    let mut {temp} = [0.0_f32; {expr.matrix.rows}];")
     if ctx.unroll_loops:
         for row in range(expr.matrix.rows):
             terms = [
-                f"{matrix_name}[{row}u][{col}u] * {vector.name}[{col}u]"
+                f"{matrix_name}[{row}][{col}] * {vector.name}[{col}]"
                 for col in range(expr.matrix.cols)
             ]
-            ctx.lines.append(f"    {temp}[{row}u] = {' + '.join(terms)};")
-        return _CValue(name=temp, dim=expr.matrix.rows)
-    ctx.lines.append(f"    for (size_t row = 0u; row < {expr.matrix.rows}u; ++row) {{")
-    ctx.lines.append("        float acc = 0.0f;")
-    ctx.lines.append(f"        for (size_t col = 0u; col < {expr.matrix.cols}u; ++col) {{")
+            ctx.lines.append(f"    {temp}[{row}] = {' + '.join(terms)};")
+        return _RustValue(name=temp, dim=expr.matrix.rows)
+    ctx.lines.append("    let mut row = 0usize;")
+    ctx.lines.append(f"    while row < {expr.matrix.rows} {{")
+    ctx.lines.append("        let mut acc = 0.0_f32;")
+    ctx.lines.append("        let mut col = 0usize;")
+    ctx.lines.append(f"        while col < {expr.matrix.cols} {{")
     ctx.lines.append(f"            acc += {matrix_name}[row][col] * {vector.name}[col];")
+    ctx.lines.append("            col += 1;")
     ctx.lines.append("        }")
     ctx.lines.append(f"        {temp}[row] = acc;")
+    ctx.lines.append("        row += 1;")
     ctx.lines.append("    }")
-    return _CValue(name=temp, dim=expr.matrix.rows)
+    return _RustValue(name=temp, dim=expr.matrix.rows)
 
 
-def _emit_clip(expr: Clip, ctx: _EmitContext) -> _CValue:
+def _emit_clip(expr: Clip, ctx: _EmitContext) -> _RustValue:
     if not isinstance(expr.lower, ScalarConstant) or not isinstance(expr.upper, ScalarConstant):
-        raise CBackendError("C backend currently supports scalar clip bounds only")
+        raise RustBackendError("Rust backend currently supports scalar clip bounds only")
     value = _emit_expr(expr.value, ctx)
     temp = ctx.new_temp()
     lower = _float_literal(expr.lower.value)
     upper = _float_literal(expr.upper.value)
-    ctx.lines.append(f"    float {temp}[{value.dim}u];")
+    ctx.lines.append(f"    let mut {temp} = [0.0_f32; {value.dim}];")
     if ctx.unroll_loops:
         for index in range(value.dim):
-            ctx.lines.append(f"    float clipped{index} = {value.name}[{index}u];")
-            ctx.lines.append(f"    if (clipped{index} < {lower}) {{")
+            ctx.lines.append(f"    let mut clipped{index} = {value.name}[{index}];")
+            ctx.lines.append(f"    if clipped{index} < {lower} {{")
             ctx.lines.append(f"        clipped{index} = {lower};")
             ctx.lines.append("    }")
-            ctx.lines.append(f"    if (clipped{index} > {upper}) {{")
+            ctx.lines.append(f"    if clipped{index} > {upper} {{")
             ctx.lines.append(f"        clipped{index} = {upper};")
             ctx.lines.append("    }")
-            ctx.lines.append(f"    {temp}[{index}u] = clipped{index};")
-        return _CValue(name=temp, dim=value.dim)
-    ctx.lines.append(f"    for (size_t i = 0u; i < {value.dim}u; ++i) {{")
-    ctx.lines.append(f"        float clipped = {value.name}[i];")
-    ctx.lines.append(f"        if (clipped < {lower}) {{")
+            ctx.lines.append(f"    {temp}[{index}] = clipped{index};")
+        return _RustValue(name=temp, dim=value.dim)
+    ctx.lines.append("    let mut i = 0usize;")
+    ctx.lines.append(f"    while i < {value.dim} {{")
+    ctx.lines.append(f"        let mut clipped = {value.name}[i];")
+    ctx.lines.append(f"        if clipped < {lower} {{")
     ctx.lines.append(f"            clipped = {lower};")
     ctx.lines.append("        }")
-    ctx.lines.append(f"        if (clipped > {upper}) {{")
+    ctx.lines.append(f"        if clipped > {upper} {{")
     ctx.lines.append(f"            clipped = {upper};")
     ctx.lines.append("        }")
     ctx.lines.append(f"        {temp}[i] = clipped;")
+    ctx.lines.append("        i += 1;")
     ctx.lines.append("    }")
-    return _CValue(name=temp, dim=value.dim)
+    return _RustValue(name=temp, dim=value.dim)
 
 
 def _render_matrix(matrix: Matrix) -> list[str]:
     if matrix.values is None:
-        raise CBackendError(f"matrix {matrix.name} has no numeric values for C generation")
-    name = _sanitize_identifier(matrix.name)
-    lines = [f"static const float {name}[{matrix.rows}u][{matrix.cols}u] = {{"]
-    for row_index, row in enumerate(matrix.values):
-        suffix = "," if row_index < matrix.rows - 1 else ""
+        raise RustBackendError(f"matrix {matrix.name} has no numeric values for Rust generation")
+    name = _sanitize_identifier(matrix.name).upper()
+    lines = [f"const {name}: [[f32; {matrix.cols}]; {matrix.rows}] = ["]
+    for row in matrix.values:
         values = ", ".join(_float_literal(value) for value in row)
-        lines.append(f"    {{{values}}}{suffix}")
-    lines.append("};")
+        lines.append(f"    [{values}],")
+    lines.append("];")
     return lines
 
 
@@ -378,14 +338,14 @@ def _float_literal(value: float) -> str:
     text = f"{float(value):.9g}"
     if "e" not in text and "." not in text:
         text = f"{text}.0"
-    return f"{text}f"
+    return f"{text}_f32"
 
 
 def _sanitize_identifier(value: str) -> str:
     chars = [char if char.isalnum() or char == "_" else "_" for char in value]
     sanitized = "".join(chars)
     if not sanitized:
-        raise CBackendError("identifier cannot be empty")
+        raise RustBackendError("identifier cannot be empty")
     if sanitized[0].isdigit():
         sanitized = f"_{sanitized}"
     return sanitized

@@ -75,6 +75,8 @@ class LqrPolicy:
         metadata = {
             "frontend": "lqr",
             "gain_name": spec.gain_name,
+            "state_name": spec.state_name,
+            "control_name": spec.control_name,
             "state_dim": str(spec.state_dim),
             "control_dim": str(spec.control_dim),
         }

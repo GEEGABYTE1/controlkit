@@ -1,6 +1,5 @@
-#pipeline
-
 from __future__ import annotations
+
 from controlkit.compiler.ir import (
     Add,
     Clip,
@@ -13,15 +12,19 @@ from controlkit.compiler.ir import (
     MatVecMul,
     Neg,
     ScalarConstant,
+    ScalarMul,
     Shape,
     Sub,
     ValueKind,
     Vector,
+    Zero,
     add,
     clip,
     matvec,
     neg,
+    scalar_mul,
     sub,
+    zero,
 )
 from controlkit.compiler.pipeline import CompileRequest, CompileResult, CompilerPipeline
 from controlkit.compiler.targets import TargetLanguage, TargetSpec
@@ -41,15 +44,19 @@ __all__ = [
     "MatVecMul",
     "Neg",
     "ScalarConstant",
+    "ScalarMul",
     "Shape",
     "Sub",
     "TargetLanguage",
     "TargetSpec",
     "ValueKind",
     "Vector",
+    "Zero",
     "add",
     "clip",
     "matvec",
     "neg",
+    "scalar_mul",
     "sub",
+    "zero",
 ]
