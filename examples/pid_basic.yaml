@@ -1,0 +1,11 @@
+name: pid_basic
+policy: pid
+sample_time_seconds: 0.001
+gains:
+  kp: 1.0
+  ki: 0.1
+  kd: 0.01
+limits:
+  output_min: -1.0
+  output_max: 1.0
+

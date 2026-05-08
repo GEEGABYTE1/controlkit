@@ -1,0 +1,10 @@
+name: mpc_temperature
+policy: mpc
+sample_time_seconds: 1.0
+horizon:
+  prediction_steps: 20
+  control_steps: 5
+constraints:
+  state: placeholder
+  input: placeholder
+
