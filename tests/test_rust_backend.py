@@ -9,6 +9,24 @@ from controlkit.backends.rust import RustBackend, RustBackendError
 from controlkit.compiler.ir import ControlLaw, IRModule, Matrix, Vector, matvec
 from controlkit.policies.base import PolicyKind
 from controlkit.policies.lqr import LqrPolicy
+from controlkit.policies.mpc import MpcPolicy
+
+
+def _mpc_module() -> IRModule:
+    spec = MpcPolicy().from_matrices(
+        name="mpc_temperature",
+        a_matrix=((1.0, 1.0), (0.0, 1.0)),
+        b_matrix=((0.0,), (1.0,)),
+        horizon=3,
+        q_diagonal=(1.0, 0.1),
+        r_diagonal=(0.05,),
+        q_terminal_diagonal=(1.5, 0.2),
+        u_min=(-0.5,),
+        u_max=(0.5,),
+        solver_iterations=4,
+        step_size=0.1,
+    )
+    return MpcPolicy().lower(spec)
 
 
 def test_rust_backend_generates_no_std_source_for_saturated_lqr() -> None:
@@ -27,7 +45,10 @@ def test_rust_backend_generates_no_std_source_for_saturated_lqr() -> None:
     assert "pub const CONTROL_DIM: usize = 1;" in artifact.source
     assert "const K: [[f32; 4]; 1] = [" in artifact.source
     assert "    [1.2_f32, 0.4_f32, 2.5_f32, 0.8_f32]," in artifact.source
-    assert "pub fn control_step(x: &[f32; STATE_DIM], u: &mut [f32; CONTROL_DIM])" in artifact.source
+    assert (
+        "pub fn control_step(x: &[f32; STATE_DIM], u: &mut [f32; CONTROL_DIM])"
+        in artifact.source
+    )
     assert "acc += K[row][col] * x[col];" in artifact.source
     assert "tmp1[i] = -tmp0[i];" in artifact.source
     assert "if clipped < -1.0_f32" in artifact.source
@@ -73,6 +94,47 @@ def test_rust_backend_generated_source_compiles_when_rustc_is_available(tmp_path
     )
     source_path = RustBackend().generate(LqrPolicy().lower(spec)).write_to(tmp_path)
     output_path = tmp_path / "libcartpole_lqr.rlib"
+
+    subprocess.run(
+        [
+            rustc,
+            "--edition=2021",
+            "--crate-type",
+            "lib",
+            str(source_path),
+            "-o",
+            str(output_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert output_path.exists()
+
+
+def test_rust_backend_generates_deterministic_mpc_source() -> None:
+    artifact = RustBackend().generate(_mpc_module())
+
+    assert artifact.source_name == "mpc_temperature.rs"
+    assert "#![no_std]" in artifact.source
+    assert "pub const STATE_DIM: usize = 2;" in artifact.source
+    assert "pub const CONTROL_DIM: usize = 1;" in artifact.source
+    assert "const MPC_HORIZON: usize = 3;" in artifact.source
+    assert "const MPC_SOLVER_ITERATIONS: usize = 4;" in artifact.source
+    assert "const U_MIN: [f32; 1] = [-0.5_f32];" in artifact.source
+    assert "let mut u_seq = [[0.0_f32; CONTROL_DIM]; 3];" in artifact.source
+    assert "u[j] = u_seq[0][j];" in artifact.source
+    assert RustBackend().generate(_mpc_module()).source == artifact.source
+
+
+def test_rust_backend_generated_mpc_source_compiles_when_rustc_is_available(tmp_path) -> None:
+    rustc = shutil.which("rustc")
+    if rustc is None:
+        pytest.skip("rustc is not installed")
+
+    source_path = RustBackend().generate(_mpc_module()).write_to(tmp_path)
+    output_path = tmp_path / "libmpc_temperature.rlib"
 
     subprocess.run(
         [
