@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import subprocess
 import time
@@ -18,6 +19,8 @@ from controlkit.compiler.ir import (
     ControlLaw,
     Expr,
     IRModule,
+    ActivationLayerIR,
+    LinearLayerIR,
     Matrix,
     MatVecMul,
     MpcControllerIR,
@@ -112,6 +115,14 @@ def benchmark_module(module: IRModule, config: BenchmarkConfig | None = None) ->
 def estimate_memory_footprint(module: IRModule) -> int:
     matrices = _collect_matrices(module)
     matrix_bytes = sum(matrix.rows * matrix.cols * 4 for matrix in matrices)
+    rl_bytes = 0
+    for policy in module.rl_policies:
+        max_activation_dim = max(layer.output_dim for layer in policy.layers)
+        rl_bytes += max_activation_dim * 2 * 4
+        for layer in policy.layers:
+            if isinstance(layer, LinearLayerIR):
+                rl_bytes += layer.input_dim * layer.output_dim * 4
+                rl_bytes += layer.output_dim * 4
     mpc_bytes = 0
     for controller in module.mpc_controllers:
         n = controller.state.dim
@@ -132,10 +143,12 @@ def estimate_memory_footprint(module: IRModule) -> int:
         vector_dims += law.output.dim
         for vector in _collect_vectors(law.expression):
             vector_dims += vector.dim
-    return matrix_bytes + vector_dims * 4 + mpc_bytes
+    return matrix_bytes + vector_dims * 4 + mpc_bytes + rl_bytes
 
 
 def _benchmark_python(module: IRModule, config: BenchmarkConfig) -> BenchmarkResult:
+    if module.rl_policies:
+        return _benchmark_python_rl(module, config)
     if module.mpc_controllers:
         return _benchmark_python_mpc(module, config)
     law = _select_control_law(module)
@@ -149,6 +162,29 @@ def _benchmark_python(module: IRModule, config: BenchmarkConfig) -> BenchmarkRes
     output = []
     for _ in range(config.iterations):
         output = _evaluate_control_law(law, input_vector, sample)
+    elapsed = time.perf_counter_ns() - start
+    return BenchmarkResult(
+        name="python",
+        status="ok",
+        iterations=config.iterations,
+        latency_ns_per_call=elapsed / config.iterations,
+        notes=f"last_output={_format_vector(output)}",
+    )
+
+
+def _benchmark_python_rl(module: IRModule, config: BenchmarkConfig) -> BenchmarkResult:
+    if len(module.rl_policies) != 1:
+        raise ValueError("benchmarking currently supports exactly one RL policy")
+    policy = module.rl_policies[0]
+    sample = [1.0 / float(index + 1) for index in range(policy.input_vector.dim)]
+
+    for _ in range(config.warmup_iterations):
+        _evaluate_rl_policy(policy.layers, sample)
+
+    start = time.perf_counter_ns()
+    output = []
+    for _ in range(config.iterations):
+        output = _evaluate_rl_policy(policy.layers, sample)
     elapsed = time.perf_counter_ns() - start
     return BenchmarkResult(
         name="python",
@@ -212,6 +248,7 @@ def _benchmark_c(module: IRModule, config: BenchmarkConfig) -> BenchmarkResult:
                     str(runner_path),
                     "-o",
                     str(binary_path),
+                    "-lm",
                 ],
                 check=True,
                 capture_output=True,
@@ -334,6 +371,25 @@ def _evaluate_mpc_controller(controller: MpcControllerIR, x: list[float]) -> lis
                 u_seq[k][col] = next_u
 
     return list(u_seq[0])
+
+
+def _evaluate_rl_policy(
+    layers: tuple[LinearLayerIR | ActivationLayerIR, ...],
+    values: list[float],
+) -> list[float]:
+    current = list(values)
+    for layer in layers:
+        if isinstance(layer, LinearLayerIR):
+            current = [
+                layer.bias[row]
+                + sum(layer.weights[row][col] * current[col] for col in range(layer.input_dim))
+                for row in range(layer.output_dim)
+            ]
+        elif layer.kind.value == "relu":
+            current = [max(0.0, value) for value in current]
+        else:
+            current = [math.tanh(value) for value in current]
+    return current
 
 
 def _evaluate_expr(expr: Expr, env: dict[str, list[float]]) -> float | list[float]:

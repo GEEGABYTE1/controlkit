@@ -11,6 +11,7 @@ from controlkit.compiler.ir import IRModule
 from controlkit.policies.base import PolicyKind
 from controlkit.policies.lqr import LqrPolicy, LqrSpecError
 from controlkit.policies.mpc import MpcPolicy, MpcSpecError
+from controlkit.policies.rl import RlPolicy, RlSpecError
 
 
 class ControllerSpecError(ValueError):
@@ -41,6 +42,8 @@ def load_controller_spec(path: Path) -> LoadedControllerSpec:
         module = _lower_lqr(path, raw)
     elif policy == PolicyKind.MPC.value:
         module = _lower_mpc(path, raw)
+    elif policy == PolicyKind.RL.value:
+        module = _lower_rl(path, raw)
     else:
         raise ControllerSpecError(f"unsupported policy for CLI lowering: {policy}")
     return LoadedControllerSpec(path=path, raw=raw, module=module)
@@ -115,6 +118,25 @@ def _lower_mpc(path: Path, raw: dict[str, Any]) -> IRModule:
         )
         return frontend.lower(spec)
     except (TypeError, MpcSpecError) as exc:
+        raise ControllerSpecError(str(exc)) from exc
+
+
+def _lower_rl(path: Path, raw: dict[str, Any]) -> IRModule:
+    name = str(raw.get("name", path.stem))
+    raw_weights_path = Path(str(_required(raw, "weights_path")))
+    weights_path = raw_weights_path
+    if not weights_path.is_absolute():
+        weights_path = path.parent / weights_path
+    try:
+        frontend = RlPolicy()
+        spec = frontend.from_json_file(
+            name=name,
+            weights_path=weights_path,
+            input_name=str(raw.get("input_name", "x")),
+            output_name=str(raw.get("output_name", "u")),
+        )
+        return frontend.lower(spec)
+    except (TypeError, RlSpecError) as exc:
         raise ControllerSpecError(str(exc)) from exc
 
 

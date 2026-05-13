@@ -11,8 +11,11 @@ from controlkit.compiler.ir import (
     ControlLaw,
     Expr,
     IRModule,
+    ActivationLayerIR,
+    LinearLayerIR,
     Matrix,
     MatVecMul,
+    MpcControllerIR,
     Neg,
     ScalarConstant,
     ScalarMul,
@@ -69,6 +72,10 @@ class CBackend:
     unroll_loops: bool = False
 
     def generate(self, module: IRModule) -> CGeneratedArtifact:
+        if module.rl_policies:
+            return self._generate_rl(module)
+        if module.mpc_controllers:
+            return self._generate_mpc(module)
         law = self._select_control_law(module)
         input_vector = self._select_input_vector(module, law)
 
@@ -92,6 +99,62 @@ class CBackend:
             output_vector=law.output,
             expression=law.expression,
             matrices=matrices,
+        )
+        return CGeneratedArtifact(
+            header_name=header_name,
+            source_name=source_name,
+            header=header,
+            source=source,
+        )
+
+    def _generate_rl(self, module: IRModule) -> CGeneratedArtifact:
+        if len(module.rl_policies) != 1:
+            raise CBackendError("C backend currently supports exactly one RL policy")
+        policy = module.rl_policies[0]
+        module_id = _sanitize_identifier(module.name)
+        header_name = f"{module_id}.h"
+        source_name = f"{module_id}.c"
+        function_name = f"{module_id}_control_step"
+        guard = f"CONTROLKIT_{module_id.upper()}_H"
+        header = self._render_header(
+            guard=guard,
+            function_name=function_name,
+            input_vector=policy.input_vector,
+            output_vector=policy.output_vector,
+        )
+        source = _render_rl_source(
+            header_name=header_name,
+            function_name=function_name,
+            input_vector=policy.input_vector,
+            output_vector=policy.output_vector,
+            layers=policy.layers,
+        )
+        return CGeneratedArtifact(
+            header_name=header_name,
+            source_name=source_name,
+            header=header,
+            source=source,
+        )
+
+    def _generate_mpc(self, module: IRModule) -> CGeneratedArtifact:
+        if len(module.mpc_controllers) != 1:
+            raise CBackendError("C backend currently supports exactly one MPC controller")
+        controller = module.mpc_controllers[0]
+        module_id = _sanitize_identifier(module.name)
+        header_name = f"{module_id}.h"
+        source_name = f"{module_id}.c"
+        function_name = f"{module_id}_control_step"
+        guard = f"CONTROLKIT_{module_id.upper()}_H"
+        header = self._render_header(
+            guard=guard,
+            function_name=function_name,
+            input_vector=controller.state,
+            output_vector=controller.control,
+        )
+        source = _render_mpc_source(
+            header_name=header_name,
+            function_name=function_name,
+            controller=controller,
         )
         return CGeneratedArtifact(
             header_name=header_name,
@@ -339,6 +402,190 @@ def _render_matrix(matrix: Matrix) -> list[str]:
         lines.append(f"    {{{values}}}{suffix}")
     lines.append("};")
     return lines
+
+
+def _render_rl_source(
+    *,
+    header_name: str,
+    function_name: str,
+    input_vector: Vector,
+    output_vector: Vector,
+    layers: tuple[LinearLayerIR | ActivationLayerIR, ...],
+) -> str:
+    lines = [
+        f'#include "{header_name}"',
+        "",
+        "#include <math.h>",
+        "",
+    ]
+    for index, layer in enumerate(layers):
+        if isinstance(layer, LinearLayerIR):
+            lines.extend(_render_rl_matrix(f"LAYER_{index}_WEIGHTS", layer.weights))
+            lines.append("")
+            lines.extend(_render_vector_constant(f"LAYER_{index}_BIAS", layer.bias))
+            lines.append("")
+
+    input_name = _sanitize_identifier(input_vector.name)
+    output_name = _sanitize_identifier(output_vector.name)
+    current_name = input_name
+    current_dim = input_vector.dim
+    body: list[str] = []
+    for index, layer in enumerate(layers):
+        next_name = f"layer_{index}"
+        body.append(f"    float {next_name}[{layer.output_dim}u];")
+        if isinstance(layer, LinearLayerIR):
+            weights_name = f"LAYER_{index}_WEIGHTS"
+            bias_name = f"LAYER_{index}_BIAS"
+            body.append(f"    for (size_t row = 0u; row < {layer.output_dim}u; ++row) {{")
+            body.append(f"        float acc = {bias_name}[row];")
+            body.append(f"        for (size_t col = 0u; col < {layer.input_dim}u; ++col) {{")
+            body.append(f"            acc += {weights_name}[row][col] * {current_name}[col];")
+            body.append("        }")
+            body.append(f"        {next_name}[row] = acc;")
+            body.append("    }")
+        elif layer.kind.value == "relu":
+            body.append(f"    for (size_t i = 0u; i < {current_dim}u; ++i) {{")
+            body.append(f"        float value = {current_name}[i];")
+            body.append(f"        {next_name}[i] = value > 0.0f ? value : 0.0f;")
+            body.append("    }")
+        else:
+            body.append(f"    for (size_t i = 0u; i < {current_dim}u; ++i) {{")
+            body.append(f"        {next_name}[i] = tanhf({current_name}[i]);")
+            body.append("    }")
+        current_name = next_name
+        current_dim = layer.output_dim
+
+    lines.append(
+        f"void {function_name}(const float {input_name}[CONTROLKIT_STATE_DIM], "
+        f"float {output_name}[CONTROLKIT_CONTROL_DIM])"
+    )
+    lines.append("{")
+    lines.extend(body)
+    lines.append("    for (size_t i = 0u; i < CONTROLKIT_CONTROL_DIM; ++i) {")
+    lines.append(f"        {output_name}[i] = {current_name}[i];")
+    lines.append("    }")
+    lines.append("}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _render_rl_matrix(name: str, values: tuple[tuple[float, ...], ...]) -> list[str]:
+    rows = len(values)
+    cols = len(values[0])
+    lines = [f"static const float {name}[{rows}u][{cols}u] = {{"]
+    for row_index, row in enumerate(values):
+        suffix = "," if row_index < rows - 1 else ""
+        rendered = ", ".join(_float_literal(value) for value in row)
+        lines.append(f"    {{{rendered}}}{suffix}")
+    lines.append("};")
+    return lines
+
+
+def _render_mpc_source(
+    *,
+    header_name: str,
+    function_name: str,
+    controller: MpcControllerIR,
+) -> str:
+    n = controller.state.dim
+    m = controller.control.dim
+    h = controller.horizon
+    lines = [
+        f'#include "{header_name}"',
+        "",
+        f"#define CONTROLKIT_MPC_HORIZON {h}u",
+        f"#define CONTROLKIT_MPC_SOLVER_ITERATIONS {controller.solver_iterations}u",
+        "",
+    ]
+    lines.extend(_render_matrix(controller.a_matrix))
+    lines.append("")
+    lines.extend(_render_matrix(controller.b_matrix))
+    lines.append("")
+    lines.extend(_render_vector_constant("Q_DIAGONAL", controller.q_diagonal))
+    lines.append("")
+    lines.extend(_render_vector_constant("R_DIAGONAL", controller.r_diagonal))
+    lines.append("")
+    lines.extend(_render_vector_constant("Q_TERMINAL_DIAGONAL", controller.q_terminal_diagonal))
+    lines.append("")
+    lines.extend(_render_vector_constant("U_MIN", controller.u_min))
+    lines.append("")
+    lines.extend(_render_vector_constant("U_MAX", controller.u_max))
+    lines.extend(
+        [
+            "",
+            f"static const float STEP_SIZE = {_float_literal(controller.step_size)};",
+            "",
+            f"void {function_name}(const float x[CONTROLKIT_STATE_DIM], "
+            "float u[CONTROLKIT_CONTROL_DIM])",
+            "{",
+            f"    float X[CONTROLKIT_MPC_HORIZON + 1u][{n}u];",
+            f"    float U[CONTROLKIT_MPC_HORIZON][{m}u] = {{0}};",
+            f"    float lambda[CONTROLKIT_MPC_HORIZON + 1u][{n}u];",
+            f"    float grad[CONTROLKIT_MPC_HORIZON][{m}u];",
+            "",
+            "    for (size_t iter = 0u; iter < CONTROLKIT_MPC_SOLVER_ITERATIONS; ++iter) {",
+            f"        for (size_t i = 0u; i < {n}u; ++i) {{",
+            "            X[0u][i] = x[i];",
+            "        }",
+            "        for (size_t k = 0u; k < CONTROLKIT_MPC_HORIZON; ++k) {",
+            f"            for (size_t row = 0u; row < {n}u; ++row) {{",
+            "                float acc = 0.0f;",
+            f"                for (size_t col = 0u; col < {n}u; ++col) {{",
+            "                    acc += A[row][col] * X[k][col];",
+            "                }",
+            f"                for (size_t col = 0u; col < {m}u; ++col) {{",
+            "                    acc += B[row][col] * U[k][col];",
+            "                }",
+            "                X[k + 1u][row] = acc;",
+            "            }",
+            "        }",
+            f"        for (size_t i = 0u; i < {n}u; ++i) {{",
+            "            lambda[CONTROLKIT_MPC_HORIZON][i] =",
+            "                Q_TERMINAL_DIAGONAL[i] * X[CONTROLKIT_MPC_HORIZON][i];",
+            "        }",
+            "        for (size_t kk = CONTROLKIT_MPC_HORIZON; kk > 0u; --kk) {",
+            "            size_t k = kk - 1u;",
+            f"            for (size_t j = 0u; j < {m}u; ++j) {{",
+            "                float acc = R_DIAGONAL[j] * U[k][j];",
+            f"                for (size_t i = 0u; i < {n}u; ++i) {{",
+            "                    acc += B[i][j] * lambda[k + 1u][i];",
+            "                }",
+            "                grad[k][j] = acc;",
+            "            }",
+            f"            for (size_t i = 0u; i < {n}u; ++i) {{",
+            "                float acc = Q_DIAGONAL[i] * X[k][i];",
+            f"                for (size_t row = 0u; row < {n}u; ++row) {{",
+            "                    acc += A[row][i] * lambda[k + 1u][row];",
+            "                }",
+            "                lambda[k][i] = acc;",
+            "            }",
+            "        }",
+            "        for (size_t k = 0u; k < CONTROLKIT_MPC_HORIZON; ++k) {",
+            f"            for (size_t j = 0u; j < {m}u; ++j) {{",
+            "                float next_u = U[k][j] - STEP_SIZE * grad[k][j];",
+            "                if (next_u < U_MIN[j]) {",
+            "                    next_u = U_MIN[j];",
+            "                }",
+            "                if (next_u > U_MAX[j]) {",
+            "                    next_u = U_MAX[j];",
+            "                }",
+            "                U[k][j] = next_u;",
+            "            }",
+            "        }",
+            "    }",
+            f"    for (size_t j = 0u; j < {m}u; ++j) {{",
+            "        u[j] = U[0u][j];",
+            "    }",
+            "}",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _render_vector_constant(name: str, values: tuple[float, ...]) -> list[str]:
+    rendered = ", ".join(_float_literal(value) for value in values)
+    return [f"static const float {name}[{len(values)}u] = {{{rendered}}};"]
 
 
 def _collect_matrices(expr: Expr) -> tuple[Matrix, ...]:

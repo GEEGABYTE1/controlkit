@@ -1,9 +1,5 @@
 name: rl_balance
 policy: rl
-sample_time_seconds: 0.02
-network:
-  format: placeholder
-  layers: []
-deployment:
-  quantization: planned
-
+weights_path: rl_balance_weights.json
+input_name: x
+output_name: u

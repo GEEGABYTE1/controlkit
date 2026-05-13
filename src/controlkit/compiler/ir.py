@@ -340,6 +340,188 @@ class LinearSystemIR:
         return f"{self.lhs_name} = {self.expression!r}"
 
 
+class RlLayerKind(StrEnum):
+    """Supported small neural-network layer kinds."""
+
+    LINEAR = "linear"
+    RELU = "relu"
+    TANH = "tanh"
+
+
+@dataclass(frozen=True)
+class LinearLayerIR:
+    """Dense neural-network layer `y = Wx + b`."""
+
+    weights: tuple[tuple[float, ...], ...]
+    bias: tuple[float, ...]
+
+    def __post_init__(self) -> None:
+        if not self.weights:
+            raise IRValidationError("linear layer weights must have at least one row")
+        if not self.weights[0]:
+            raise IRValidationError("linear layer weights must have at least one column")
+        input_dim = len(self.weights[0])
+        for row in self.weights:
+            if len(row) != input_dim:
+                raise IRValidationError("linear layer weight rows must have equal length")
+        if len(self.bias) != len(self.weights):
+            raise IRValidationError("linear layer bias length must match output dimension")
+
+    @property
+    def input_dim(self) -> int:
+        return len(self.weights[0])
+
+    @property
+    def output_dim(self) -> int:
+        return len(self.weights)
+
+    def __repr__(self) -> str:
+        return f"LinearLayerIR({self.input_dim}->{self.output_dim})"
+
+
+@dataclass(frozen=True)
+class ActivationLayerIR:
+    """Elementwise neural-network activation layer."""
+
+    kind: RlLayerKind
+    dim: int
+
+    def __post_init__(self) -> None:
+        if self.kind not in {RlLayerKind.RELU, RlLayerKind.TANH}:
+            raise IRValidationError("activation layer kind must be relu or tanh")
+        if self.dim <= 0:
+            raise IRValidationError("activation layer dimension must be positive")
+
+    @property
+    def input_dim(self) -> int:
+        return self.dim
+
+    @property
+    def output_dim(self) -> int:
+        return self.dim
+
+    def __repr__(self) -> str:
+        return f"ActivationLayerIR({self.kind.value}[{self.dim}])"
+
+
+RlLayerIR = LinearLayerIR | ActivationLayerIR
+
+
+@dataclass(frozen=True)
+class RlPolicyIR:
+    """Fixed-shape MLP policy for embedded inference."""
+
+    name: str
+    input_vector: Vector
+    output_vector: Vector
+    layers: tuple[RlLayerIR, ...]
+
+    def __post_init__(self) -> None:
+        _validate_name(self.name)
+        if not isinstance(self.input_vector, Vector):
+            raise IRValidationError("RL policy input must be a vector")
+        if not isinstance(self.output_vector, Vector):
+            raise IRValidationError("RL policy output must be a vector")
+        if not self.layers:
+            raise IRValidationError("RL policy must contain at least one layer")
+
+        current_dim = self.input_vector.dim
+        saw_linear = False
+        for layer in self.layers:
+            if not isinstance(layer, LinearLayerIR | ActivationLayerIR):
+                raise IRValidationError("RL policy layers must be known layer IR nodes")
+            if layer.input_dim != current_dim:
+                raise IRValidationError(
+                    f"RL layer input dimension {layer.input_dim} does not match {current_dim}"
+                )
+            current_dim = layer.output_dim
+            saw_linear = saw_linear or isinstance(layer, LinearLayerIR)
+
+        if not saw_linear:
+            raise IRValidationError("RL policy must contain at least one linear layer")
+        if current_dim != self.output_vector.dim:
+            raise IRValidationError(
+                f"RL output dimension {current_dim} does not match {self.output_vector.dim}"
+            )
+
+    def __repr__(self) -> str:
+        return (
+            f"RlPolicyIR(name={self.name!r}, input_dim={self.input_vector.dim}, "
+            f"output_dim={self.output_vector.dim}, layers={len(self.layers)})"
+        )
+
+
+@dataclass(frozen=True)
+class MpcControllerIR:
+    """Embedded-friendly finite-horizon MPC controller."""
+
+    name: str
+    state: Vector
+    control: Vector
+    a_matrix: Matrix
+    b_matrix: Matrix
+    horizon: int
+    q_diagonal: tuple[float, ...]
+    r_diagonal: tuple[float, ...]
+    q_terminal_diagonal: tuple[float, ...]
+    u_min: tuple[float, ...]
+    u_max: tuple[float, ...]
+    solver_iterations: int
+    step_size: float
+    dynamics: DynamicsKind = DynamicsKind.DISCRETE
+
+    def __post_init__(self) -> None:
+        _validate_name(self.name)
+        if self.dynamics is not DynamicsKind.DISCRETE:
+            raise IRValidationError("MPC-lite requires discrete dynamics")
+        if not isinstance(self.state, Vector):
+            raise IRValidationError("MPC state must be a vector")
+        if not isinstance(self.control, Vector):
+            raise IRValidationError("MPC control must be a vector")
+        if not isinstance(self.a_matrix, Matrix):
+            raise IRValidationError("MPC A must be a matrix")
+        if not isinstance(self.b_matrix, Matrix):
+            raise IRValidationError("MPC B must be a matrix")
+        if self.a_matrix.values is None:
+            raise IRValidationError("MPC A must include numeric values")
+        if self.b_matrix.values is None:
+            raise IRValidationError("MPC B must include numeric values")
+        if self.horizon <= 0:
+            raise IRValidationError("MPC horizon must be positive")
+        if self.solver_iterations <= 0:
+            raise IRValidationError("MPC solver_iterations must be positive")
+        if self.step_size <= 0.0:
+            raise IRValidationError("MPC step_size must be positive")
+
+        state_dim = self.state.dim
+        control_dim = self.control.dim
+        if (self.a_matrix.rows, self.a_matrix.cols) != (state_dim, state_dim):
+            raise IRValidationError(
+                f"MPC A must have shape matrix[{state_dim}x{state_dim}], "
+                f"got {self.a_matrix.shape!r}"
+            )
+        if (self.b_matrix.rows, self.b_matrix.cols) != (state_dim, control_dim):
+            raise IRValidationError(
+                f"MPC B must have shape matrix[{state_dim}x{control_dim}], "
+                f"got {self.b_matrix.shape!r}"
+            )
+        _validate_vector_values(self.q_diagonal, state_dim, "q_diagonal")
+        _validate_vector_values(self.r_diagonal, control_dim, "r_diagonal")
+        _validate_vector_values(self.q_terminal_diagonal, state_dim, "q_terminal_diagonal")
+        _validate_vector_values(self.u_min, control_dim, "u_min")
+        _validate_vector_values(self.u_max, control_dim, "u_max")
+        for lower, upper in zip(self.u_min, self.u_max, strict=True):
+            if lower > upper:
+                raise IRValidationError("MPC u_min entries must be <= u_max entries")
+
+    def __repr__(self) -> str:
+        return (
+            f"MpcControllerIR(name={self.name!r}, state_dim={self.state.dim}, "
+            f"control_dim={self.control.dim}, horizon={self.horizon}, "
+            f"solver_iterations={self.solver_iterations})"
+        )
+
+
 @dataclass(frozen=True)
 class IRModule:
     """A policy lowered into ControlKit's backend-neutral representation."""
@@ -349,12 +531,16 @@ class IRModule:
     metadata: Mapping[str, str] = field(default_factory=dict)
     systems: tuple[LinearSystemIR, ...] = field(default_factory=tuple)
     control_laws: tuple[ControlLaw, ...] = field(default_factory=tuple)
+    mpc_controllers: tuple[MpcControllerIR, ...] = field(default_factory=tuple)
+    rl_policies: tuple[RlPolicyIR, ...] = field(default_factory=tuple)
 
     def __repr__(self) -> str:
         policy_name = getattr(self.policy, "value", str(self.policy))
         return (
             f"IRModule(name={self.name!r}, policy={policy_name!r}, "
-            f"systems={len(self.systems)}, control_laws={len(self.control_laws)})"
+            f"systems={len(self.systems)}, control_laws={len(self.control_laws)}, "
+            f"mpc_controllers={len(self.mpc_controllers)}, "
+            f"rl_policies={len(self.rl_policies)})"
         )
 
 
@@ -429,6 +615,11 @@ def _validate_matrix_values(
     for row in values:
         if len(row) != cols:
             raise IRValidationError(f"matrix value rows must have {cols} columns")
+
+
+def _validate_vector_values(values: tuple[float, ...], dim: int, name: str) -> None:
+    if len(values) != dim:
+        raise IRValidationError(f"{name} must have {dim} entries")
 
 
 def _validate_same_shape(left: Expr, right: Expr, operation: str) -> None:

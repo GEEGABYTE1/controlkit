@@ -10,6 +10,7 @@ from controlkit.compiler.ir import ControlLaw, IRModule, Matrix, Vector, matvec
 from controlkit.policies.base import PolicyKind
 from controlkit.policies.lqr import LqrPolicy
 from controlkit.policies.mpc import MpcPolicy
+from controlkit.policies.rl import RlPolicy
 
 
 def _mpc_module() -> IRModule:
@@ -27,6 +28,25 @@ def _mpc_module() -> IRModule:
         step_size=0.1,
     )
     return MpcPolicy().lower(spec)
+
+
+def _rl_module() -> IRModule:
+    spec = RlPolicy().from_layers(
+        name="rl_balance",
+        input_dim=2,
+        output_dim=1,
+        layers=[
+            {
+                "type": "linear",
+                "weights": [[0.5, -0.25], [0.1, 0.4], [-0.3, 0.2], [0.7, -0.1]],
+                "bias": [0.05, -0.02, 0.1, 0.0],
+            },
+            {"type": "relu"},
+            {"type": "linear", "weights": [[0.8, -0.6, 0.3, 0.2]], "bias": [-0.05]},
+            {"type": "tanh"},
+        ],
+    )
+    return RlPolicy().lower(spec)
 
 
 def test_rust_backend_generates_no_std_source_for_saturated_lqr() -> None:
@@ -152,3 +172,96 @@ def test_rust_backend_generated_mpc_source_compiles_when_rustc_is_available(tmp_
     )
 
     assert output_path.exists()
+
+
+def test_rust_backend_generates_deterministic_rl_source() -> None:
+    artifact = RustBackend().generate(_rl_module())
+
+    assert artifact.source_name == "rl_balance.rs"
+    assert "#![no_std]" in artifact.source
+    assert "pub const STATE_DIM: usize = 2;" in artifact.source
+    assert "pub const CONTROL_DIM: usize = 1;" in artifact.source
+    assert "const LAYER_0_WEIGHTS: [[f32; 2]; 4]" in artifact.source
+    assert "const LAYER_2_BIAS: [f32; 1] = [-0.05_f32];" in artifact.source
+    assert "fn controlkit_tanh(x: f32) -> f32" in artifact.source
+    assert "layer_1[i] = if value > 0.0_f32 { value } else { 0.0_f32 };" in artifact.source
+    assert "layer_3[i] = controlkit_tanh(layer_2[i]);" in artifact.source
+    assert RustBackend().generate(_rl_module()).source == artifact.source
+
+
+def test_rust_backend_generated_rl_source_compiles_when_rustc_is_available(tmp_path) -> None:
+    rustc = shutil.which("rustc")
+    if rustc is None:
+        pytest.skip("rustc is not installed")
+
+    source_path = RustBackend().generate(_rl_module()).write_to(tmp_path)
+    output_path = tmp_path / "librl_balance.rlib"
+
+    subprocess.run(
+        [
+            rustc,
+            "--edition=2021",
+            "--crate-type",
+            "lib",
+            str(source_path),
+            "-o",
+            str(output_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert output_path.exists()
+
+
+def test_rust_backend_generated_rl_output_matches_reference_when_rustc_is_available(
+    tmp_path,
+) -> None:
+    rustc = shutil.which("rustc")
+    if rustc is None:
+        pytest.skip("rustc is not installed")
+
+    generated_source = RustBackend().generate(_rl_module()).source
+    source = "\n".join(
+        line for line in generated_source.splitlines() if line.strip() != "#![no_std]"
+    )
+    runner_path = tmp_path / "run_rl.rs"
+    binary_path = tmp_path / "run_rl"
+    runner_path.write_text(
+        "\n".join(
+            [
+                source,
+                "",
+                "fn main() {",
+                "    let x = [1.0_f32, 0.5_f32];",
+                "    let mut u = [0.0_f32; CONTROL_DIM];",
+                "    control_step(&x, &mut u);",
+                '    println!("{:.9}", u[0]);',
+                "}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    subprocess.run(
+        [
+            rustc,
+            "--edition=2021",
+            str(runner_path),
+            "-o",
+            str(binary_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    completed = subprocess.run(
+        [str(binary_path)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert float(completed.stdout.strip()) == pytest.approx(0.246798, abs=2e-3)

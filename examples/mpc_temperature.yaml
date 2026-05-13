@@ -1,10 +1,20 @@
 name: mpc_temperature
 policy: mpc
-sample_time_seconds: 1.0
-horizon:
-  prediction_steps: 20
-  control_steps: 5
-constraints:
-  state: placeholder
-  input: placeholder
-
+state_dim: 2
+control_dim: 1
+state_name: x
+control_name: u
+horizon: 3
+a_matrix:
+  - [1.0, 1.0]
+  - [0.0, 1.0]
+b_matrix:
+  - [0.0]
+  - [1.0]
+q_diagonal: [1.0, 0.1]
+r_diagonal: [0.05]
+q_terminal_diagonal: [1.5, 0.2]
+u_min: [-0.5]
+u_max: [0.5]
+solver_iterations: 4
+step_size: 0.1

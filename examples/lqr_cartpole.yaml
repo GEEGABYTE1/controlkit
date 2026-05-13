@@ -1,11 +1,15 @@
 name: lqr_cartpole
 policy: lqr
 sample_time_seconds: 0.01
-system:
-  states: 4
-  inputs: 1
-  outputs: 2
-cost:
-  q: placeholder
-  r: placeholder
-
+state_dim: 4
+control_dim: 1
+state_name: x
+control_name: u
+gain_name: K
+state_names: ["position", "velocity", "angle", "angular_velocity"]
+control_names: ["force"]
+gain_matrix:
+  - [1.2, 0.4, 2.5, 0.8]
+saturation:
+  lower: -1.0
+  upper: 1.0

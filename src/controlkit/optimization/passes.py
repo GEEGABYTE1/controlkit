@@ -1,14 +1,19 @@
-#optimization passes
+"""Optimization passes over ControlKit IR."""
 
 from __future__ import annotations
+
 from dataclasses import dataclass
+
 from controlkit.compiler.ir import (
     Add,
     Clip,
     ControlLaw,
     Expr,
     IRModule,
+    ActivationLayerIR,
+    LinearLayerIR,
     MatVecMul,
+    MpcControllerIR,
     Neg,
     ScalarConstant,
     ScalarMul,
@@ -19,6 +24,8 @@ from controlkit.compiler.ir import (
 
 @dataclass(frozen=True)
 class OptimizationReport:
+    """Summary of changes and rough work estimates for an optimization run."""
+
     rewrites: int
     operations_before: int
     operations_after: int
@@ -26,11 +33,15 @@ class OptimizationReport:
 
 @dataclass(frozen=True)
 class OptimizationResult:
+    """Optimized module plus optimization metadata."""
+
     module: IRModule
     report: OptimizationReport
 
 
 class SimplifyPass:
+    """Apply conservative algebraic simplifications to IR expressions."""
+
     def run(self, module: IRModule) -> OptimizationResult:
         operations_before = estimate_operation_count(module)
         rewrites = 0
@@ -46,6 +57,8 @@ class SimplifyPass:
             metadata=module.metadata,
             systems=module.systems,
             control_laws=tuple(optimized_laws),
+            mpc_controllers=module.mpc_controllers,
+            rl_policies=module.rl_policies,
         )
         operations_after = estimate_operation_count(optimized_module)
         return OptimizationResult(
@@ -59,10 +72,14 @@ class SimplifyPass:
 
 
 def optimize_module(module: IRModule) -> OptimizationResult:
+    """Run the default optimization pipeline."""
+
     return SimplifyPass().run(module)
 
 
 def simplify_expr(expr: Expr) -> tuple[Expr, int]:
+    """Simplify one expression tree and return `(expression, rewrite_count)`."""
+
     if isinstance(expr, ScalarConstant | Zero):
         return expr, 0
 
@@ -142,10 +159,42 @@ def simplify_expr(expr: Expr) -> tuple[Expr, int]:
 
 
 def estimate_operation_count(module: IRModule) -> int:
+    """Estimate scalar arithmetic/comparison operations in an IR module."""
+
     total = 0
     for law in module.control_laws:
         total += _estimate_expr_operations(law.expression)
+    for controller in module.mpc_controllers:
+        total += _estimate_mpc_operations(controller)
+    for policy in module.rl_policies:
+        total += _estimate_rl_operations(policy.layers)
     return total
+
+
+def _estimate_rl_operations(layers: tuple[LinearLayerIR | ActivationLayerIR, ...]) -> int:
+    total = 0
+    for layer in layers:
+        if isinstance(layer, LinearLayerIR):
+            total += layer.input_dim * layer.output_dim * 2
+            total += layer.output_dim
+        else:
+            total += layer.output_dim
+    return total
+
+
+def _estimate_mpc_operations(controller: MpcControllerIR) -> int:
+    n = controller.state.dim
+    m = controller.control.dim
+    h = controller.horizon
+    rollout_per_step = (n * n * 2) + (n * m * 2)
+    terminal_costate = n
+    grad_per_step = m + (m * n * 2)
+    costate_per_step = n + (n * n * 2)
+    projected_update_per_step = m * 4
+    return controller.solver_iterations * (
+        terminal_costate
+        + h * (rollout_per_step + grad_per_step + costate_per_step + projected_update_per_step)
+    )
 
 
 def _estimate_expr_operations(expr: Expr) -> int:

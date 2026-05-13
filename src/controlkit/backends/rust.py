@@ -11,8 +11,11 @@ from controlkit.compiler.ir import (
     ControlLaw,
     Expr,
     IRModule,
+    ActivationLayerIR,
+    LinearLayerIR,
     Matrix,
     MatVecMul,
+    MpcControllerIR,
     Neg,
     ScalarConstant,
     ScalarMul,
@@ -66,6 +69,10 @@ class RustBackend:
     unroll_loops: bool = False
 
     def generate(self, module: IRModule) -> RustGeneratedArtifact:
+        if module.rl_policies:
+            return self._generate_rl(module)
+        if module.mpc_controllers:
+            return self._generate_mpc(module)
         law = self._select_control_law(module)
         input_vector = self._select_input_vector(module, law)
         module_id = _sanitize_identifier(module.name)
@@ -77,6 +84,25 @@ class RustBackend:
             expression=law.expression,
             matrices=matrices,
         )
+        return RustGeneratedArtifact(source_name=f"{module_id}.rs", source=source)
+
+    def _generate_rl(self, module: IRModule) -> RustGeneratedArtifact:
+        if len(module.rl_policies) != 1:
+            raise RustBackendError("Rust backend currently supports exactly one RL policy")
+        policy = module.rl_policies[0]
+        module_id = _sanitize_identifier(module.name)
+        source = _render_rl_source(
+            input_vector=policy.input_vector,
+            output_vector=policy.output_vector,
+            layers=policy.layers,
+        )
+        return RustGeneratedArtifact(source_name=f"{module_id}.rs", source=source)
+
+    def _generate_mpc(self, module: IRModule) -> RustGeneratedArtifact:
+        if len(module.mpc_controllers) != 1:
+            raise RustBackendError("Rust backend currently supports exactly one MPC controller")
+        module_id = _sanitize_identifier(module.name)
+        source = _render_mpc_source(module.mpc_controllers[0])
         return RustGeneratedArtifact(source_name=f"{module_id}.rs", source=source)
 
     def _select_control_law(self, module: IRModule) -> ControlLaw:
@@ -299,6 +325,241 @@ def _render_matrix(matrix: Matrix) -> list[str]:
         lines.append(f"    [{values}],")
     lines.append("];")
     return lines
+
+
+def _render_rl_source(
+    *,
+    input_vector: Vector,
+    output_vector: Vector,
+    layers: tuple[LinearLayerIR | ActivationLayerIR, ...],
+) -> str:
+    input_name = _sanitize_identifier(input_vector.name)
+    output_name = _sanitize_identifier(output_vector.name)
+    lines = [
+        "#![no_std]",
+        "",
+        f"pub const STATE_DIM: usize = {input_vector.dim};",
+        f"pub const CONTROL_DIM: usize = {output_vector.dim};",
+        "",
+    ]
+    for index, layer in enumerate(layers):
+        if isinstance(layer, LinearLayerIR):
+            lines.extend(_render_rl_matrix(f"LAYER_{index}_WEIGHTS", layer.weights))
+            lines.append("")
+            lines.extend(_render_vector_constant(f"LAYER_{index}_BIAS", layer.bias))
+            lines.append("")
+    if any(isinstance(layer, ActivationLayerIR) and layer.kind.value == "tanh" for layer in layers):
+        lines.extend(_render_tanh_approx())
+        lines.append("")
+
+    current_name = input_name
+    current_dim = input_vector.dim
+    body: list[str] = []
+    for index, layer in enumerate(layers):
+        next_name = f"layer_{index}"
+        body.append(f"    let mut {next_name} = [0.0_f32; {layer.output_dim}];")
+        if isinstance(layer, LinearLayerIR):
+            weights_name = f"LAYER_{index}_WEIGHTS"
+            bias_name = f"LAYER_{index}_BIAS"
+            body.append("    let mut row = 0usize;")
+            body.append(f"    while row < {layer.output_dim} {{")
+            body.append(f"        let mut acc = {bias_name}[row];")
+            body.append("        let mut col = 0usize;")
+            body.append(f"        while col < {layer.input_dim} {{")
+            body.append(f"            acc += {weights_name}[row][col] * {current_name}[col];")
+            body.append("            col += 1;")
+            body.append("        }")
+            body.append(f"        {next_name}[row] = acc;")
+            body.append("        row += 1;")
+            body.append("    }")
+        elif layer.kind.value == "relu":
+            body.append("    let mut i = 0usize;")
+            body.append(f"    while i < {current_dim} {{")
+            body.append(f"        let value = {current_name}[i];")
+            body.append(
+                f"        {next_name}[i] = if value > 0.0_f32 {{ value }} else {{ 0.0_f32 }};"
+            )
+            body.append("        i += 1;")
+            body.append("    }")
+        else:
+            body.append("    let mut i = 0usize;")
+            body.append(f"    while i < {current_dim} {{")
+            body.append(f"        {next_name}[i] = controlkit_tanh({current_name}[i]);")
+            body.append("        i += 1;")
+            body.append("    }")
+        current_name = next_name
+        current_dim = layer.output_dim
+
+    lines.append(
+        f"pub fn control_step({input_name}: &[f32; STATE_DIM], "
+        f"{output_name}: &mut [f32; CONTROL_DIM]) {{"
+    )
+    lines.extend(body)
+    lines.append("    let mut i = 0usize;")
+    lines.append("    while i < CONTROL_DIM {")
+    lines.append(f"        {output_name}[i] = {current_name}[i];")
+    lines.append("        i += 1;")
+    lines.append("    }")
+    lines.append("}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _render_rl_matrix(name: str, values: tuple[tuple[float, ...], ...]) -> list[str]:
+    rows = len(values)
+    cols = len(values[0])
+    lines = [f"const {name}: [[f32; {cols}]; {rows}] = ["]
+    for row in values:
+        rendered = ", ".join(_float_literal(value) for value in row)
+        lines.append(f"    [{rendered}],")
+    lines.append("];")
+    return lines
+
+
+def _render_tanh_approx() -> list[str]:
+    return [
+        "fn controlkit_tanh(x: f32) -> f32 {",
+        "    if x > 3.0_f32 {",
+        "        return 1.0_f32;",
+        "    }",
+        "    if x < -3.0_f32 {",
+        "        return -1.0_f32;",
+        "    }",
+        "    let x2 = x * x;",
+        "    x * (27.0_f32 + x2) / (27.0_f32 + 9.0_f32 * x2)",
+        "}",
+    ]
+
+
+def _render_mpc_source(controller: MpcControllerIR) -> str:
+    n = controller.state.dim
+    m = controller.control.dim
+    h = controller.horizon
+    lines = [
+        "#![no_std]",
+        "",
+        f"pub const STATE_DIM: usize = {n};",
+        f"pub const CONTROL_DIM: usize = {m};",
+        f"const MPC_HORIZON: usize = {h};",
+        f"const MPC_SOLVER_ITERATIONS: usize = {controller.solver_iterations};",
+        "",
+    ]
+    lines.extend(_render_matrix(controller.a_matrix))
+    lines.append("")
+    lines.extend(_render_matrix(controller.b_matrix))
+    lines.append("")
+    lines.extend(_render_vector_constant("Q_DIAGONAL", controller.q_diagonal))
+    lines.append("")
+    lines.extend(_render_vector_constant("R_DIAGONAL", controller.r_diagonal))
+    lines.append("")
+    lines.extend(_render_vector_constant("Q_TERMINAL_DIAGONAL", controller.q_terminal_diagonal))
+    lines.append("")
+    lines.extend(_render_vector_constant("U_MIN", controller.u_min))
+    lines.append("")
+    lines.extend(_render_vector_constant("U_MAX", controller.u_max))
+    lines.extend(
+        [
+            "",
+            f"const STEP_SIZE: f32 = {_float_literal(controller.step_size)};",
+            "",
+            "pub fn control_step(x: &[f32; STATE_DIM], u: &mut [f32; CONTROL_DIM]) {",
+            f"    let mut x_seq = [[0.0_f32; STATE_DIM]; {h + 1}];",
+            f"    let mut u_seq = [[0.0_f32; CONTROL_DIM]; {h}];",
+            f"    let mut costate = [[0.0_f32; STATE_DIM]; {h + 1}];",
+            f"    let mut grad = [[0.0_f32; CONTROL_DIM]; {h}];",
+            "",
+            "    let mut iter = 0usize;",
+            "    while iter < MPC_SOLVER_ITERATIONS {",
+            "        let mut i = 0usize;",
+            "        while i < STATE_DIM {",
+            "            x_seq[0][i] = x[i];",
+            "            i += 1;",
+            "        }",
+            "        let mut k = 0usize;",
+            "        while k < MPC_HORIZON {",
+            "            let mut row = 0usize;",
+            "            while row < STATE_DIM {",
+            "                let mut acc = 0.0_f32;",
+            "                let mut col = 0usize;",
+            "                while col < STATE_DIM {",
+            "                    acc += A[row][col] * x_seq[k][col];",
+            "                    col += 1;",
+            "                }",
+            "                let mut uj = 0usize;",
+            "                while uj < CONTROL_DIM {",
+            "                    acc += B[row][uj] * u_seq[k][uj];",
+            "                    uj += 1;",
+            "                }",
+            "                x_seq[k + 1][row] = acc;",
+            "                row += 1;",
+            "            }",
+            "            k += 1;",
+            "        }",
+            "        i = 0usize;",
+            "        while i < STATE_DIM {",
+            "            costate[MPC_HORIZON][i] = Q_TERMINAL_DIAGONAL[i] * x_seq[MPC_HORIZON][i];",
+            "            i += 1;",
+            "        }",
+            "        let mut kk = MPC_HORIZON;",
+            "        while kk > 0 {",
+            "            let k = kk - 1;",
+            "            let mut j = 0usize;",
+            "            while j < CONTROL_DIM {",
+            "                let mut acc = R_DIAGONAL[j] * u_seq[k][j];",
+            "                let mut i = 0usize;",
+            "                while i < STATE_DIM {",
+            "                    acc += B[i][j] * costate[k + 1][i];",
+            "                    i += 1;",
+            "                }",
+            "                grad[k][j] = acc;",
+            "                j += 1;",
+            "            }",
+            "            let mut i = 0usize;",
+            "            while i < STATE_DIM {",
+            "                let mut acc = Q_DIAGONAL[i] * x_seq[k][i];",
+            "                let mut row = 0usize;",
+            "                while row < STATE_DIM {",
+            "                    acc += A[row][i] * costate[k + 1][row];",
+            "                    row += 1;",
+            "                }",
+            "                costate[k][i] = acc;",
+            "                i += 1;",
+            "            }",
+            "            kk -= 1;",
+            "        }",
+            "        k = 0usize;",
+            "        while k < MPC_HORIZON {",
+            "            let mut j = 0usize;",
+            "            while j < CONTROL_DIM {",
+            "                let mut next_u = u_seq[k][j] - STEP_SIZE * grad[k][j];",
+            "                if next_u < U_MIN[j] {",
+            "                    next_u = U_MIN[j];",
+            "                }",
+            "                if next_u > U_MAX[j] {",
+            "                    next_u = U_MAX[j];",
+            "                }",
+            "                u_seq[k][j] = next_u;",
+            "                j += 1;",
+            "            }",
+            "            k += 1;",
+            "        }",
+            "        iter += 1;",
+            "    }",
+            "    let mut j = 0usize;",
+            "    while j < CONTROL_DIM {",
+            "        u[j] = u_seq[0][j];",
+            "        j += 1;",
+            "    }",
+            "}",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _render_vector_constant(name: str, values: tuple[float, ...]) -> list[str]:
+    rendered = ", ".join(_float_literal(value) for value in values)
+    return [f"const {name}: [f32; {len(values)}] = [{rendered}];"]
 
 
 def _collect_matrices(expr: Expr) -> tuple[Matrix, ...]:

@@ -6,6 +6,7 @@ from controlkit.benchmarks import BenchmarkConfig, benchmark_module
 from controlkit.compiler.ir import IRModule
 from controlkit.policies.lqr import LqrPolicy
 from controlkit.policies.mpc import MpcPolicy
+from controlkit.policies.rl import RlPolicy
 
 
 def _module() -> IRModule:
@@ -33,6 +34,21 @@ def _mpc_module() -> IRModule:
         step_size=0.1,
     )
     return MpcPolicy().lower(spec)
+
+
+def _rl_module() -> IRModule:
+    spec = RlPolicy().from_layers(
+        name="bench_rl",
+        input_dim=2,
+        output_dim=1,
+        layers=[
+            {"type": "linear", "weights": [[0.5, -0.25], [0.1, 0.4]], "bias": [0.05, -0.02]},
+            {"type": "relu"},
+            {"type": "linear", "weights": [[0.8, -0.6]], "bias": [-0.05]},
+            {"type": "tanh"},
+        ],
+    )
+    return RlPolicy().lower(spec)
 
 
 def test_benchmark_module_reports_python_latency_and_estimates() -> None:
@@ -91,6 +107,21 @@ def test_benchmark_module_reports_mpc_python_reference() -> None:
     )
 
     assert report.module_name == "bench_mpc"
+    assert report.operation_count_estimate > 0
+    assert report.memory_footprint_bytes > 0
+    assert len(report.results) == 1
+    assert report.results[0].name == "python"
+    assert report.results[0].status == "ok"
+    assert "last_output=" in report.results[0].notes
+
+
+def test_benchmark_module_reports_rl_python_reference() -> None:
+    report = benchmark_module(
+        _rl_module(),
+        BenchmarkConfig(iterations=5, warmup_iterations=1, include_c=False, include_rust=False),
+    )
+
+    assert report.module_name == "bench_rl"
     assert report.operation_count_estimate > 0
     assert report.memory_footprint_bytes > 0
     assert len(report.results) == 1

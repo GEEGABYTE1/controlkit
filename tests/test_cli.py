@@ -56,6 +56,39 @@ def _write_mpc_spec(path: Path) -> None:
     )
 
 
+def _write_rl_spec(path: Path) -> None:
+    (path.parent / "rl_weights.json").write_text(
+        "\n".join(
+            [
+                "{",
+                '  "input_dim": 2,',
+                '  "output_dim": 1,',
+                '  "layers": [',
+                '    {"type": "linear", "weights": [[0.5, -0.25], [0.1, 0.4]],',
+                '      "bias": [0.05, -0.02]},',
+                '    {"type": "relu"},',
+                '    {"type": "linear", "weights": [[0.8, -0.6]], "bias": [-0.05]},',
+                '    {"type": "tanh"}',
+                "  ]",
+                "}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    path.write_text(
+        "\n".join(
+            [
+                "name: cli_rl",
+                "policy: rl",
+                "weights_path: rl_weights.json",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_version_command_prints_version(capsys) -> None:
     assert main(["version"]) == 0
 
@@ -191,6 +224,53 @@ def test_mpc_validate_inspect_compile_and_benchmark(tmp_path: Path, capsys) -> N
     benchmark_output = capsys.readouterr().out
     assert str(benchmarks / "cli_mpc.json") in benchmark_output
     assert (benchmarks / "cli_mpc.md").exists()
+
+
+def test_rl_validate_inspect_compile_and_benchmark(tmp_path: Path, capsys) -> None:
+    spec = tmp_path / "rl.yaml"
+    generated = tmp_path / "generated"
+    benchmarks = tmp_path / "benchmarks"
+    _write_rl_spec(spec)
+
+    assert main(["validate", str(spec)]) == 0
+    assert "policy: rl" in capsys.readouterr().out
+
+    assert main(["inspect", str(spec)]) == 0
+    inspected = capsys.readouterr().out
+    assert "control_laws: 0" in inspected
+    assert "rl_policies: 1" in inspected
+    assert "layers: 4" in inspected
+
+    assert main(["compile", str(spec), "--target", "c", "--output", str(generated)]) == 0
+    c_output = capsys.readouterr().out
+    assert str(generated / "cli_rl.h") in c_output
+    assert (generated / "cli_rl.c").exists()
+
+    assert main(["compile", str(spec), "--target", "rust", "--output", str(generated)]) == 0
+    rust_output = capsys.readouterr().out
+    assert str(generated / "cli_rl.rs") in rust_output
+    assert (generated / "cli_rl.rs").exists()
+
+    assert (
+        main(
+            [
+                "benchmark",
+                str(spec),
+                "--output",
+                str(benchmarks),
+                "--iterations",
+                "3",
+                "--warmup-iterations",
+                "1",
+                "--no-c",
+                "--no-rust",
+            ]
+        )
+        == 0
+    )
+    benchmark_output = capsys.readouterr().out
+    assert str(benchmarks / "cli_rl.json") in benchmark_output
+    assert (benchmarks / "cli_rl.md").exists()
 
 
 def test_unsupported_policy_exits_with_error(tmp_path: Path, capsys) -> None:
