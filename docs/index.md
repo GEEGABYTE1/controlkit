@@ -1,12 +1,17 @@
 # ControlKit Docs
 
 ControlKit is being shaped as a compiler toolchain for embedded control policies. The current docs
-capture the intended architecture, decisions, benchmarks, plotting outputs, and roadmap while the
-implementation is still scaffolded.
+capture the architecture, decisions, benchmarks, plotting outputs, and roadmap as the compiler grows
+phase by phase. LQR, MPC-lite, and RL MLP specs can now lower into IR, compile to C/Rust, and run
+through the benchmark pipeline.
 
 Start with:
 
 - [Architecture](compiler_architecture.md)
+- [Architecture Diagram](architecture_diagram.md)
+- [Benchmark Summary](benchmark_summary.md)
+- [Demo Walkthrough](demo_walkthrough.md)
 - [Design Decisions](../design_decisions.md)
 - [Roadmap](../roadmap.md)
-
+- [Product Website](../website/index.html)
+- [Technical Blog](../blog/controlkit_v1.md)
