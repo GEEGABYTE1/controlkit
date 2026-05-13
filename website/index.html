@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ControlKit | Compiler for Embedded Control Systems</title>
+    <meta
+      name="description"
+      content="A technical case study for ControlKit, a compiler CLI for embedded control policies."
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body id="top">
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="ControlKit home">
+        <span>ControlKit</span>
+      </a>
+      <div class="header-actions">
+        <button class="theme-toggle" type="button" aria-label="Switch to dark mode" title="Switch to dark mode">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M21 13.1A8.2 8.2 0 0 1 10.9 3a7.1 7.1 0 1 0 10.1 10.1Z" />
+          </svg>
+        </button>
+        <a href="https://github.com/GEEGABYTE1/controlkit">GitHub</a>
+      </div>
+    </header>
+
+    <main class="case-shell">
+      <aside class="toc" aria-label="Case study sections">
+        <a href="#background">Background</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#contracts">Contracts</a>
+        <a href="#ir">IR</a>
+        <a href="#validation">Validation</a>
+        <a href="#frontends">Frontends</a>
+        <a href="#backends">Backends</a>
+        <a href="#optimization">Optimization</a>
+        <a href="#benchmarks">Benchmarks</a>
+        <a href="#demo">Run it</a>
+        <a href="#takeaways">Takeaways</a>
+      </aside>
+
+      <article class="case-study">
+        <section class="hero">
+          <p class="kicker">Project, 2026</p>
+          <h1>ControlKit</h1>
+          <p class="dek">
+            A compiler toolchain for turning control-system policies into deterministic C and Rust
+            artifacts for embedded deployment.
+          </p>
+
+          <div class="hero-visual" aria-label="ControlKit command line demo">
+            <div class="visual-top">
+              <span>controlkit demo</span>
+              <span>typed IR → C/Rust → benchmark</span>
+            </div>
+            <div class="terminal-flow">
+              <div class="cli-line command">$ controlkit inspect examples/mpc_temperature.yaml</div>
+              <div class="cli-line output">policy: mpc</div>
+              <div class="cli-line output">mpc_controllers: 1</div>
+              <div class="cli-line command">$ controlkit compile examples/rl_balance.yaml --target c</div>
+              <div class="cli-line output">build/rl_c/rl_balance.h</div>
+              <div class="cli-line output">build/rl_c/rl_balance.c</div>
+              <div class="cli-line command">$ controlkit benchmark examples/rl_balance.yaml --no-rust</div>
+              <div class="cli-line output">python&nbsp;&nbsp;2693.08 ns/call</div>
+              <div class="cli-line output">c&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;6.00 ns/call</div>
+            </div>
+          </div>
+
+          <div class="project-meta" aria-label="Project metadata">
+            <div>
+              <span>Timeline</span>
+              <strong>10 phases</strong>
+            </div>
+            <div>
+              <span>Language</span>
+              <strong>Python</strong>
+            </div>
+            <div>
+              <span>Targets</span>
+              <strong>C, Rust</strong>
+            </div>
+            <div>
+              <span>Policies</span>
+              <strong>LQR, MPC-lite, RL MLP</strong>
+            </div>
+          </div>
+
+          <p class="overview">
+            ControlKit started as a phase-by-phase research engineering project: first scaffold the
+            repository, then build a typed IR, then add policy frontends, code generators,
+            optimization passes, benchmarks, a CLI, MPC-lite, RL policy compilation, and finally
+            public-facing documentation. The result is a compact compiler workflow that makes the
+            deployment step explicit and testable.
+          </p>
+        </section>
+
+        <section id="background" class="case-section">
+          <h2>Background</h2>
+          <p>
+            Control algorithms are frequently designed in simulation-first environments, then
+            manually translated into embedded code. That translation step is fragile: matrix shapes,
+            actuator bounds, solver loops, and floating-point assumptions all need to survive the
+            move from design artifact to target source.
+          </p>
+          <p>
+            ControlKit treats that move as a compiler problem. The user gives the tool a controller
+            specification. A frontend validates the policy, lowers it into a typed internal
+            representation, and then target backends generate deployable source. The benchmark
+            runner compares the generated result against a Python reference path and records static
+            estimates.
+          </p>
+        </section>
+
+        <section id="architecture" class="case-section">
+          <h2>Architecture</h2>
+          <p>
+            The core pipeline is deliberately small: specs enter through YAML or Python APIs,
+            frontends enforce controller-specific contracts, IR nodes preserve shape and semantic
+            information, optimization passes rewrite safe expression trees, and backends emit
+            deterministic C or Rust.
+          </p>
+          <div class="flow-diagram" aria-label="ControlKit architecture diagram">
+            <span>Spec</span>
+            <span>Frontend</span>
+            <span>IR</span>
+            <span>Optimization</span>
+            <span>Backend</span>
+            <span>Benchmark</span>
+          </div>
+          <p>
+            The important design choice is that policy semantics do not leak directly into backend
+            string generation. LQR, MPC-lite, and RL policies each get validated structures before
+            code generation begins.
+          </p>
+        </section>
+
+        <section id="contracts" class="case-section">
+          <h2>Compiler Contracts</h2>
+          <p>
+            ControlKit's main technical bet is that embedded control code should be generated from
+            explicit contracts rather than from loose Python objects. Every phase adds a narrow
+            boundary: frontend specs validate user intent, IR nodes validate dimensions, backends
+            validate target support, and benchmarks validate runtime behavior against a reference.
+          </p>
+          <div class="detail-grid">
+            <div>
+              <h3>Shape contract</h3>
+              <p>
+                Matrices, vectors, gain matrices, bounds, costs, and neural-network layers carry
+                dimensions that are checked before code generation.
+              </p>
+            </div>
+            <div>
+              <h3>Policy contract</h3>
+              <p>
+                LQR lowers to feedback control, MPC lowers to a finite-horizon projected-gradient
+                solver, and RL lowers to fixed-shape MLP inference.
+              </p>
+            </div>
+            <div>
+              <h3>Target contract</h3>
+              <p>
+                C and Rust backends expose the same <code>control_step(input, output)</code>
+                surface while preserving target-specific implementation details.
+              </p>
+            </div>
+            <div>
+              <h3>Validation contract</h3>
+              <p>
+                Generated artifacts are benchmarked with a Python reference path and optional
+                native compilation when <code>cc</code> or <code>rustc</code> is available.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section id="ir" class="case-section">
+          <h2>Intermediate Representation</h2>
+          <p>
+            The first serious layer is the IR. It knows about scalar constants, vectors, matrices,
+            matrix-vector multiplication, addition, subtraction, clipping, linear systems, control
+            laws, finite-horizon MPC controllers, and fixed-shape RL policies.
+          </p>
+          <pre><code>IRModule(
+    name="rl_balance",
+    policy="rl",
+    rl_policies=(RlPolicyIR(...),),
+)</code></pre>
+          <p>
+            IR construction validates dimensions immediately. If a gain matrix cannot multiply the
+            state vector, if MPC bounds do not match the control dimension, or if an MLP layer has a
+            ragged weight matrix, the compiler fails before any target code is emitted.
+          </p>
+          <div class="technical-list">
+            <div>
+              <strong>Expression IR</strong>
+              <span>
+                Represents scalar constants, vectors, matrices, <code>MatVecMul</code>, addition,
+                subtraction, negation, and clipping as typed expression nodes.
+              </span>
+            </div>
+            <div>
+              <strong>System IR</strong>
+              <span>
+                Represents linear dynamics such as <code>x_dot = Ax + Bu</code> for continuous
+                systems and <code>x_next = Ax + Bu</code> for discrete-time systems.
+              </span>
+            </div>
+            <div>
+              <strong>Controller IR</strong>
+              <span>
+                Stores first-class LQR, MPC-lite, and RL policy nodes on the module so backends
+                can generate specialized source instead of reverse-engineering expressions.
+              </span>
+            </div>
+          </div>
+          <pre><code># LQR feedback lowered into IR semantics
+u = clip(-(K @ x), u_min, u_max)
+
+# MPC-lite generated solver semantics
+for iteration in range(solver_iterations):
+    X[0] = x
+    X[k + 1] = A @ X[k] + B @ U[k]
+    grad_u[k] = r * U[k] + B.T @ lambda[k + 1]
+    U[k] = clip(U[k] - step_size * grad_u[k], u_min, u_max)
+
+# RL policy semantics
+for layer in layers:
+    y = W @ x + b
+    x = activation(y)</code></pre>
+        </section>
+
+        <section id="validation" class="case-section">
+          <h2>Validation</h2>
+          <p>
+            Most useful compiler errors happen before generation. ControlKit tries to reject invalid
+            controllers where the mistake is still named in control-system terms: a bad
+            <code>B</code> matrix, a mismatched gain, a wrong saturation vector, or an incompatible
+            neural layer.
+          </p>
+          <div class="wide-table" role="table" aria-label="ControlKit validation examples">
+            <div role="row">
+              <strong role="cell">LQR</strong>
+              <span role="cell">Rejects gain matrices whose columns do not match <code>state_dim</code>.</span>
+            </div>
+            <div role="row">
+              <strong role="cell">MPC-lite</strong>
+              <span role="cell">Rejects non-discrete dynamics, invalid horizons, bad cost vectors, and control bounds whose lengths do not equal <code>control_dim</code>.</span>
+            </div>
+            <div role="row">
+              <strong role="cell">RL MLP</strong>
+              <span role="cell">Rejects empty networks, ragged weight matrices, invalid activations, missing JSON weights, and incompatible adjacent layer dimensions.</span>
+            </div>
+            <div role="row">
+              <strong role="cell">Backends</strong>
+              <span role="cell">Reject unsupported module shapes rather than emitting partial target code.</span>
+            </div>
+          </div>
+        </section>
+
+        <section id="frontends" class="case-section">
+          <h2>Frontends</h2>
+          <div class="three-col">
+            <div>
+              <h3>LQR</h3>
+              <p>Accepts a gain matrix and optional saturation, then lowers to <code>u = -Kx</code>.</p>
+            </div>
+            <div>
+              <h3>MPC-lite</h3>
+              <p>
+                Accepts discrete dynamics, diagonal costs, box constraints, horizon length, and
+                projected-gradient solver settings.
+              </p>
+            </div>
+            <div>
+              <h3>RL MLP</h3>
+              <p>
+                Accepts JSON weights for fixed-shape Linear, ReLU, and Tanh layers, then lowers to
+                neural-network inference IR.
+              </p>
+            </div>
+          </div>
+          <pre><code>controlkit validate examples/lqr_cartpole.yaml
+controlkit validate examples/mpc_temperature.yaml
+controlkit validate examples/rl_balance.yaml</code></pre>
+          <div class="example-grid">
+            <div>
+              <h3>LQR cart-pole</h3>
+              <pre><code>policy: lqr
+state_dim: 4
+control_dim: 1
+K:
+  - [12.1, 5.8, 31.2, 6.4]
+u_min: [-10.0]
+u_max: [10.0]</code></pre>
+            </div>
+            <div>
+              <h3>MPC temperature loop</h3>
+              <pre><code>policy: mpc
+horizon: 6
+A:
+  - [1.0, 0.1]
+  - [0.0, 0.98]
+B:
+  - [0.0]
+  - [0.05]
+q: [1.0, 0.2]
+r: [0.05]
+u_min: [-1.0]
+u_max: [1.0]</code></pre>
+            </div>
+            <div>
+              <h3>RL balance policy</h3>
+              <pre><code>policy: rl
+input_dim: 2
+output_dim: 1
+weights_path: rl_balance_weights.json
+
+# JSON layers:
+# Linear -> ReLU -> Linear -> Tanh</code></pre>
+            </div>
+          </div>
+          <div class="snippet-pair">
+            <pre><code>policy: mpc
+state_dim: 2
+control_dim: 1
+horizon: 6
+A:
+  - [1.0, 0.1]
+  - [0.0, 0.98]
+B:
+  - [0.0]
+  - [0.05]
+q: [1.0, 0.2]
+r: [0.05]
+u_min: [-1.0]
+u_max: [1.0]</code></pre>
+            <pre><code>{
+  "input_dim": 2,
+  "output_dim": 1,
+  "layers": [
+    {"type": "linear", "weights": [[0.4, -0.2]], "bias": [0.1]},
+    {"type": "tanh"}
+  ]
+}</code></pre>
+          </div>
+        </section>
+
+        <section id="backends" class="case-section">
+          <h2>Backends</h2>
+          <p>
+            The C backend emits standalone <code>.h</code> and <code>.c</code> files. The Rust
+            backend emits fixed-array source that keeps a <code>#![no_std]</code>-compatible style
+            where possible. Both expose the same basic control surface:
+          </p>
+          <pre><code>void control_step(
+    const float x[CONTROLKIT_STATE_DIM],
+    float u[CONTROLKIT_CONTROL_DIM]
+);</code></pre>
+          <p>
+            Generated C uses straightforward loops and <code>float</code> arrays. Generated Rust
+            uses array references and mutable output buffers. RL Tanh is target-specific: C calls
+            <code>tanhf</code>, while Rust emits a small deterministic approximation to avoid a
+            standard-library math dependency.
+          </p>
+          <div class="snippet-pair">
+            <pre><code>for (int row = 0; row < CONTROLKIT_CONTROL_DIM; row++) {
+    float acc = 0.0f;
+    for (int col = 0; col < CONTROLKIT_STATE_DIM; col++) {
+        acc += K[row][col] * x[col];
+    }
+    u[row] = -acc;
+}</code></pre>
+            <pre><code>#![no_std]
+
+pub fn control_step(
+    x: &[f32; CONTROLKIT_STATE_DIM],
+    u: &mut [f32; CONTROLKIT_CONTROL_DIM],
+) {
+    // generated fixed-shape controller body
+}</code></pre>
+          </div>
+          <p>
+            The generated code favors boring loops over cleverness. That is intentional: embedded
+            controller code should be inspectable, deterministic, and easy to compare against the
+            mathematical controller that produced it.
+          </p>
+        </section>
+
+        <section id="optimization" class="case-section">
+          <h2>Optimization</h2>
+          <p>
+            The optimizer performs symbolic simplification over the expression IR. The pass is
+            small, but it establishes the compiler shape: rewrite only when the transformation
+            preserves controller semantics and improves generated work.
+          </p>
+          <div class="detail-grid">
+            <div>
+              <h3>Constant folding</h3>
+              <p>Pure constant expressions collapse before backend emission.</p>
+            </div>
+            <div>
+              <h3>Algebraic identities</h3>
+              <p>
+                Rules like <code>x + 0 -> x</code>, <code>x * 1 -> x</code>, and
+                <code>x * 0 -> 0</code> reduce noise.
+              </p>
+            </div>
+            <div>
+              <h3>Dead computation</h3>
+              <p>Unused expression nodes can be pruned from generated work.</p>
+            </div>
+            <div>
+              <h3>Loop unrolling</h3>
+              <p>Small controllers can opt into expanded loops when the target benefits.</p>
+            </div>
+          </div>
+          <pre><code>before: add(matvec(K, x), vector([0.0, 0.0]))
+after:  matvec(K, x)</code></pre>
+        </section>
+
+        <section id="benchmarks" class="case-section">
+          <h2>Benchmarks</h2>
+          <p>
+            Benchmarks are not just a performance flex; they are validation pressure. The runner
+            measures Python reference execution, generated C when <code>cc</code> is available,
+            generated Rust when <code>rustc</code> is available, and reports operation-count and
+            memory-footprint estimates.
+          </p>
+          <div class="metric-grid">
+            <div>
+              <span>LQR C</span>
+              <strong>10.00 ns/call</strong>
+            </div>
+            <div>
+              <span>MPC-lite C</span>
+              <strong>33.00 ns/call</strong>
+            </div>
+            <div>
+              <span>RL MLP C</span>
+              <strong>6.00 ns/call</strong>
+            </div>
+          </div>
+          <div class="wide-table performance-table" role="table" aria-label="Representative ControlKit benchmark metrics">
+            <div role="row">
+              <strong role="cell">LQR cart-pole</strong>
+              <span role="cell">Python reference: 2145.84 ns/call. Generated C: 10.00 ns/call. Rust: skipped in the smoke run when <code>--no-rust</code> was set.</span>
+            </div>
+            <div role="row">
+              <strong role="cell">MPC temperature</strong>
+              <span role="cell">Python reference: 37710.29 ns/call. Generated C: 33.00 ns/call. The native loop includes rollout, costate propagation, gradient update, and clipping.</span>
+            </div>
+            <div role="row">
+              <strong role="cell">RL balance MLP</strong>
+              <span role="cell">Python reference: 2693.08 ns/call. Generated C: 6.00 ns/call. Static estimate: 12 multiplications, 12 additions, 2 activations, 84 bytes of parameters and activations.</span>
+            </div>
+          </div>
+          <pre><code>{
+  "policy": "rl",
+  "python_ns_per_call": 2693.08,
+  "c_ns_per_call": 6.00,
+  "operation_count": {
+    "multiplications": 12,
+    "additions": 12,
+    "activations": 2
+  },
+  "memory_footprint_bytes": 84
+}</code></pre>
+          <p>
+            The benchmark output is designed to answer two separate questions: whether the emitted
+            artifact agrees with the reference behavior, and whether the target implementation is
+            plausible for a real-time control loop.
+          </p>
+          <div class="example-grid compact-examples">
+            <div>
+              <h3>Compile C</h3>
+              <pre><code>controlkit compile examples/lqr_cartpole.yaml \
+  --target c \
+  --output build/lqr_c</code></pre>
+            </div>
+            <div>
+              <h3>Compile Rust</h3>
+              <pre><code>controlkit compile examples/mpc_temperature.yaml \
+  --target rust \
+  --output build/mpc_rs</code></pre>
+            </div>
+            <div>
+              <h3>Benchmark</h3>
+              <pre><code>controlkit benchmark examples/rl_balance.yaml \
+  --iterations 1000 \
+  --warmup-iterations 10</code></pre>
+            </div>
+          </div>
+        </section>
+
+        <section id="demo" class="case-section">
+          <h2>Run It Locally</h2>
+          <pre><code>git clone https://github.com/GEEGABYTE1/controlkit.git
+cd controlkit
+python -m pip install -e ".[dev]"
+controlkit inspect examples/rl_balance.yaml
+controlkit compile examples/rl_balance.yaml --target c --output build/rl_c
+controlkit benchmark examples/rl_balance.yaml --output build/benchmarks --no-rust</code></pre>
+          <p>
+            The repository also includes a fuller Markdown article, benchmark summary, architecture
+            diagram, demo walkthrough, and an Obsidian-compatible textbook for the concepts behind
+            the compiler.
+          </p>
+        </section>
+
+        <section id="takeaways" class="case-section">
+          <h2>Takeaways</h2>
+          <p>
+            ControlKit is intentionally not a giant modeling environment. It is a transparent
+            compiler layer for the deployment boundary: validate the controller, preserve its
+            semantics in IR, emit readable source, and benchmark the result.
+          </p>
+          <p>
+            The project is still pre-alpha, but the shape is now visible: control policies can be
+            treated like programs, and embedded controller deployment can look much more like a
+            compiler workflow.
+          </p>
+          <p class="article-link">
+            <a href="../blog/controlkit_v1.md">Read the full Markdown blog</a>
+            <a href="https://github.com/GEEGABYTE1/controlkit">Open GitHub</a>
+          </p>
+        </section>
+      </article>
+    </main>
+
+    <script src="theme.js"></script>
+  </body>
+</html>
