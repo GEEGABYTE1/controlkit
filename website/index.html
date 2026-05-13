@@ -42,7 +42,6 @@
 
       <article class="case-study">
         <section class="hero">
-          <p class="kicker">Project, 2026</p>
           <h1>ControlKit</h1>
           <p class="dek">
             A compiler toolchain for turning control-system policies into deterministic C and Rust
@@ -66,6 +65,9 @@
               <div class="cli-line output">c&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;6.00 ns/call</div>
             </div>
           </div>
+          <p class="example-caption">
+            Static terminal example showing inspect, compile, and benchmark commands in one flow.
+          </p>
 
           <div class="project-meta" aria-label="Project metadata">
             <div>
@@ -294,6 +296,9 @@ K:
   - [12.1, 5.8, 31.2, 6.4]
 u_min: [-10.0]
 u_max: [10.0]</code></pre>
+              <p class="example-caption">
+                Static YAML example for a saturated feedback controller.
+              </p>
             </div>
             <div>
               <h3>MPC temperature loop</h3>
@@ -309,6 +314,9 @@ q: [1.0, 0.2]
 r: [0.05]
 u_min: [-1.0]
 u_max: [1.0]</code></pre>
+              <p class="example-caption">
+                Static YAML example for a small finite-horizon controller.
+              </p>
             </div>
             <div>
               <h3>RL balance policy</h3>
@@ -319,10 +327,14 @@ weights_path: rl_balance_weights.json
 
 # JSON layers:
 # Linear -> ReLU -> Linear -> Tanh</code></pre>
+              <p class="example-caption">
+                Static YAML example that points to fixed-shape JSON weights.
+              </p>
             </div>
           </div>
           <div class="snippet-pair">
-            <pre><code>policy: mpc
+            <div>
+              <pre><code>policy: mpc
 state_dim: 2
 control_dim: 1
 horizon: 6
@@ -336,7 +348,12 @@ q: [1.0, 0.2]
 r: [0.05]
 u_min: [-1.0]
 u_max: [1.0]</code></pre>
-            <pre><code>{
+              <p class="example-caption">
+                Full inline MPC spec with dynamics, costs, and input bounds.
+              </p>
+            </div>
+            <div>
+              <pre><code>{
   "input_dim": 2,
   "output_dim": 1,
   "layers": [
@@ -344,6 +361,10 @@ u_max: [1.0]</code></pre>
     {"type": "tanh"}
   ]
 }</code></pre>
+              <p class="example-caption">
+                JSON weight payload for a tiny neural-network policy.
+              </p>
+            </div>
           </div>
         </section>
 
@@ -478,30 +499,63 @@ after:  matvec(K, x)</code></pre>
               <pre><code>controlkit compile examples/lqr_cartpole.yaml \
   --target c \
   --output build/lqr_c</code></pre>
+              <p class="example-caption">Static command for generating standalone C output.</p>
             </div>
             <div>
               <h3>Compile Rust</h3>
               <pre><code>controlkit compile examples/mpc_temperature.yaml \
   --target rust \
   --output build/mpc_rs</code></pre>
+              <p class="example-caption">Static command for generating fixed-array Rust output.</p>
             </div>
             <div>
               <h3>Benchmark</h3>
               <pre><code>controlkit benchmark examples/rl_balance.yaml \
   --iterations 1000 \
   --warmup-iterations 10</code></pre>
+              <p class="example-caption">Static command for comparing reference and generated runtime.</p>
             </div>
           </div>
         </section>
 
         <section id="demo" class="case-section">
           <h2>Run It Locally</h2>
+          <div class="gif-grid" aria-label="Animated ControlKit command examples">
+            <figure class="gif-card">
+              <div class="gif-stage">
+                <span>$ controlkit inspect examples/mpc_temperature.yaml</span>
+                <span>policy: mpc</span>
+                <span>state_dim: 2</span>
+                <span>control_dim: 1</span>
+                <span>mpc_controllers: 1</span>
+              </div>
+              <figcaption>
+                Animated inspect demo showing a YAML spec lowering into one MPC controller.
+              </figcaption>
+            </figure>
+            <figure class="gif-card">
+              <div class="gif-stage gif-stage-alt">
+                <span>$ controlkit benchmark examples/rl_balance.yaml</span>
+                <span>python reference: 2693.08 ns/call</span>
+                <span>generated c: 6.00 ns/call</span>
+                <span>operation count: 26</span>
+                <span>report: build/benchmarks/rl_balance.md</span>
+              </div>
+              <figcaption>
+                Animated benchmark demo showing reference latency, C latency, and report output.
+              </figcaption>
+            </figure>
+          </div>
           <pre><code>git clone https://github.com/GEEGABYTE1/controlkit.git
 cd controlkit
 python -m pip install -e ".[dev]"
 controlkit inspect examples/rl_balance.yaml
 controlkit compile examples/rl_balance.yaml --target c --output build/rl_c
 controlkit benchmark examples/rl_balance.yaml --output build/benchmarks --no-rust</code></pre>
+          <p class="example-caption">
+            Static end-to-end setup path: install the package, inspect a policy, compile C, and run
+            a benchmark report.
+          </p>
           <p>
             The repository also includes a fuller Markdown article, benchmark summary, architecture
             diagram, demo walkthrough, and an Obsidian-compatible textbook for the concepts behind
