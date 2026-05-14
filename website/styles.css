@@ -498,16 +498,34 @@ p {
 }
 
 pre {
+  position: relative;
   overflow-x: hidden;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   margin: 16px 0;
-  padding: 16px;
+  padding: 44px 16px 16px;
+  border: 1px solid #252525;
   border-radius: 0;
   background: var(--code-bg);
   color: var(--code-text);
   font-size: 0.82rem;
   line-height: 1.45;
+}
+
+pre::before {
+  content: attr(data-file) " · " attr(data-lang);
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: block;
+  padding: 8px 14px;
+  border-bottom: 1px solid #252525;
+  background: #181818;
+  color: #a8a8a8;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.72rem;
+  line-height: 1.2;
 }
 
 code {
@@ -526,8 +544,45 @@ li code {
 .compact-examples pre,
 .walkthrough pre {
   margin: 10px 0 0;
-  padding: 14px;
+  padding: 40px 14px 14px;
   font-size: 0.78rem;
+}
+
+.tok-comment {
+  color: var(--syntax-comment);
+}
+
+.tok-command {
+  color: var(--syntax-command);
+  font-weight: 700;
+}
+
+.tok-keyword {
+  color: var(--syntax-subcmd);
+}
+
+.tok-path {
+  color: var(--syntax-path);
+}
+
+.tok-flag {
+  color: var(--syntax-flag);
+}
+
+.tok-key {
+  color: var(--syntax-key);
+}
+
+.tok-string {
+  color: var(--syntax-path);
+}
+
+.tok-number {
+  color: var(--syntax-number);
+}
+
+.tok-type {
+  color: var(--syntax-flag);
 }
 
 .performance-table {

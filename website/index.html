@@ -226,7 +226,7 @@
             matrix-vector multiplication, addition, subtraction, clipping, linear systems, control
             laws, finite-horizon MPC controllers, and fixed-shape RL policies.
           </p>
-          <pre><code>IRModule(
+          <pre data-file="module.py" data-lang="python"><code>IRModule(
     name="rl_balance",
     policy="rl",
     rl_policies=(RlPolicyIR(...),),
@@ -259,7 +259,7 @@
               </span>
             </div>
           </div>
-          <pre><code># LQR feedback lowered into IR semantics
+          <pre data-file="ir_semantics.py" data-lang="python"><code># LQR feedback lowered into IR semantics
 u = clip(-(K @ x), u_min, u_max)
 
 # MPC-lite generated solver semantics
@@ -337,7 +337,7 @@ for layer in layers:
           <div class="walkthrough">
             <div>
               <h3>1. Write the spec</h3>
-              <pre><code># custom_room_lqr.yaml
+              <pre data-file="custom_room_lqr.yaml" data-lang="yaml"><code># custom_room_lqr.yaml
 # x[0] = temperature error, x[1] = error rate
 # u[0] = heater/cooler command clipped to [-1, 1]
 policy: lqr
@@ -353,7 +353,7 @@ u_max: [1.0]</code></pre>
             </div>
             <div>
               <h3>2. Inspect and validate</h3>
-              <pre><code># Fail early if dimensions or bounds are wrong.
+              <pre data-file="terminal" data-lang="shell"><code># Fail early if dimensions or bounds are wrong.
 controlkit validate custom_room_lqr.yaml
 
 # Inspect the lowered module before generation.
@@ -367,7 +367,7 @@ controlkit inspect custom_room_lqr.yaml
             </div>
             <div>
               <h3>3. Compile to C</h3>
-              <pre><code># Emit deterministic C source and header files.
+              <pre data-file="terminal" data-lang="shell"><code># Emit deterministic C source and header files.
 controlkit compile custom_room_lqr.yaml \
   --target c \
   --output build/room_c
@@ -380,7 +380,7 @@ controlkit compile custom_room_lqr.yaml \
             </div>
             <div>
               <h3>4. Benchmark the artifact</h3>
-              <pre><code># Compare Python reference latency with generated C.
+              <pre data-file="terminal" data-lang="shell"><code># Compare Python reference latency with generated C.
 controlkit benchmark custom_room_lqr.yaml \
   --output build/room_bench \
   --iterations 1000 \
@@ -406,7 +406,7 @@ controlkit benchmark custom_room_lqr.yaml \
           <div class="walkthrough">
             <div>
               <h3>Plant abstraction</h3>
-              <pre><code># State vector:
+              <pre data-file="reaction_wheel_model.txt" data-lang="text"><code># State vector:
 # x[0] = attitude error, radians
 # x[1] = angular-rate error, rad/s
 #
@@ -418,7 +418,7 @@ controlkit benchmark custom_room_lqr.yaml \
             </div>
             <div>
               <h3>Controller spec</h3>
-              <pre><code>policy: lqr
+              <pre data-file="reaction_wheel_axis.yaml" data-lang="yaml"><code>policy: lqr
 name: reaction_wheel_axis
 state_dim: 2
 control_dim: 1
@@ -431,7 +431,7 @@ u_max: [0.025]</code></pre>
             </div>
             <div>
               <h3>Generated boundary</h3>
-              <pre><code># Firmware calls one deterministic function.
+              <pre data-file="reaction_wheel_axis.h" data-lang="c"><code># Firmware calls one deterministic function.
 void control_step(
     const float x[2],
     float u[1]
@@ -443,7 +443,7 @@ void control_step(
             </div>
             <div>
               <h3>What gets checked</h3>
-              <pre><code># K must be 1 x 2.
+              <pre data-file="validation_report.txt" data-lang="text"><code># K must be 1 x 2.
 # u_min/u_max must have length 1.
 # generated C is benchmarked against Python.
 # report includes latency and operation count.</code></pre>
@@ -458,7 +458,7 @@ void control_step(
             backend emits fixed-array source that keeps a <code>#![no_std]</code>-compatible style
             where possible. Both expose the same basic control surface:
           </p>
-          <pre><code>void control_step(
+          <pre data-file="controlkit_controller.h" data-lang="c"><code>void control_step(
     const float x[CONTROLKIT_STATE_DIM],
     float u[CONTROLKIT_CONTROL_DIM]
 );</code></pre>
@@ -469,14 +469,14 @@ void control_step(
             standard-library math dependency.
           </p>
           <div class="snippet-pair">
-            <pre><code>for (int row = 0; row < CONTROLKIT_CONTROL_DIM; row++) {
+            <pre data-file="controlkit_controller.c" data-lang="c"><code>for (int row = 0; row < CONTROLKIT_CONTROL_DIM; row++) {
     float acc = 0.0f;
     for (int col = 0; col < CONTROLKIT_STATE_DIM; col++) {
         acc += K[row][col] * x[col];
     }
     u[row] = -acc;
 }</code></pre>
-            <pre><code>#![no_std]
+            <pre data-file="controlkit_controller.rs" data-lang="rust"><code>#![no_std]
 
 pub fn control_step(
     x: &[f32; CONTROLKIT_STATE_DIM],
@@ -520,7 +520,7 @@ pub fn control_step(
               <p>Small controllers can opt into expanded loops when the target benefits.</p>
             </div>
           </div>
-          <pre><code>before: add(matvec(K, x), vector([0.0, 0.0]))
+          <pre data-file="optimization_trace.txt" data-lang="text"><code>before: add(matvec(K, x), vector([0.0, 0.0]))
 after:  matvec(K, x)</code></pre>
         </section>
 
@@ -560,7 +560,7 @@ after:  matvec(K, x)</code></pre>
               <span role="cell">Python reference: 2693.08 ns/call. Generated C: 6.00 ns/call. Static estimate: 12 multiplications, 12 additions, 2 activations, 84 bytes of parameters and activations.</span>
             </div>
           </div>
-          <pre><code>{
+          <pre data-file="rl_balance.json" data-lang="json"><code>{
   "policy": "rl",
   "python_ns_per_call": 2693.08,
   "c_ns_per_call": 6.00,
@@ -579,21 +579,21 @@ after:  matvec(K, x)</code></pre>
           <div class="example-grid compact-examples">
             <div>
               <h3>Compile C</h3>
-              <pre><code># Generate standalone C output.
+              <pre data-file="terminal" data-lang="shell"><code># Generate standalone C output.
 controlkit compile examples/lqr_cartpole.yaml \
   --target c \
   --output build/lqr_c</code></pre>
             </div>
             <div>
               <h3>Compile Rust</h3>
-              <pre><code># Generate fixed-array Rust output.
+              <pre data-file="terminal" data-lang="shell"><code># Generate fixed-array Rust output.
 controlkit compile examples/mpc_temperature.yaml \
   --target rust \
   --output build/mpc_rs</code></pre>
             </div>
             <div>
               <h3>Benchmark</h3>
-              <pre><code># Compare reference and generated runtime.
+              <pre data-file="terminal" data-lang="shell"><code># Compare reference and generated runtime.
 controlkit benchmark examples/rl_balance.yaml \
   --iterations 1000 \
   --warmup-iterations 10</code></pre>
@@ -614,13 +614,13 @@ controlkit benchmark examples/rl_balance.yaml \
             compiler workflow.
           </p>
           <p class="article-link">
-            <a href="../blog/controlkit_v1.md">Read the full Markdown blog</a>
             <a href="https://github.com/GEEGABYTE1/controlkit">Open GitHub</a>
           </p>
         </section>
       </article>
     </main>
 
+    <script src="syntax.js"></script>
     <script src="theme.js"></script>
   </body>
 </html>
