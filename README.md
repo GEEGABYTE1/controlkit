@@ -3,6 +3,8 @@
 ControlKit is a high-performance control-system compiler CLI. It compiles LQR, MPC-lite, and small
 reinforcement-learning policies into deterministic C or Rust artifacts for embedded deployment.
 
+[Website](website/index.html)
+
 ## Quick Start
 
 Requirements:
@@ -258,22 +260,18 @@ activations, while Rust keeps `#![no_std]` with a small deterministic Tanh appro
 
 ## Phase Timeline
 
-| Phase | Focus | Status |
-| --- | --- | --- |
-| 1 | ControlKit IR for expressions, control laws, shape checks, and linear systems | Complete |
-| 2 | LQR frontend that lowers YAML/Python specs into IR | Complete |
-| 3 | Standalone C backend for generated controller code | Complete |
-| 4 | Rust backend with fixed-size arrays and `#![no_std]`-oriented output | Complete |
-| 5 | Symbolic simplification and lightweight optimization passes | Complete |
-| 6 | Latency benchmarking, operation counts, and report generation | Complete |
-| 7 | CLI commands for validate, inspect, compile, benchmark, and YAML specs | Complete |
-| 8 | MPC-lite frontend and projected-gradient generated solvers | Complete |
-| 9 | RL MLP policy compilation from dependency-free JSON weights | Complete |
-| 10 | Product website, demo walkthrough, and public polish | In progress |
-
-## Website
-
-- [Product website](website/index.html)
+| Phase | Focus |
+| --- | --- |
+| 1 | ControlKit IR for expressions, control laws, shape checks, and linear systems |
+| 2 | LQR frontend that lowers YAML/Python specs into IR |
+| 3 | Standalone C backend for generated controller code |
+| 4 | Rust backend with fixed-size arrays and `#![no_std]`-oriented output |
+| 5 | Symbolic simplification and lightweight optimization passes |
+| 6 | Latency benchmarking, operation counts, and report generation |
+| 7 | CLI commands for validate, inspect, compile, benchmark, and YAML specs |
+| 8 | MPC-lite frontend and projected-gradient generated solvers |
+| 9 | RL MLP policy compilation from dependency-free JSON weights |
+| 10 | Product website, demo walkthrough, and public polish |
 
 ## Repository Layout
 
