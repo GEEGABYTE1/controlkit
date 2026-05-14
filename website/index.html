@@ -27,16 +27,18 @@
 
     <main class="case-shell">
       <aside class="toc" aria-label="Case study sections">
+        <a href="#philosophy">Philosophy</a>
         <a href="#background">Background</a>
         <a href="#architecture">Architecture</a>
         <a href="#contracts">Contracts</a>
         <a href="#ir">IR</a>
         <a href="#validation">Validation</a>
         <a href="#frontends">Frontends</a>
+        <a href="#custom-example">Custom example</a>
+        <a href="#case-study">Case study</a>
         <a href="#backends">Backends</a>
         <a href="#optimization">Optimization</a>
         <a href="#benchmarks">Benchmarks</a>
-        <a href="#demo">Run it</a>
         <a href="#takeaways">Takeaways</a>
       </aside>
 
@@ -54,26 +56,52 @@
               <span>typed IR → C/Rust → benchmark</span>
             </div>
             <div class="terminal-flow">
-              <div class="cli-line command">$ controlkit inspect examples/mpc_temperature.yaml</div>
-              <div class="cli-line output">policy: mpc</div>
-              <div class="cli-line output">mpc_controllers: 1</div>
-              <div class="cli-line command">$ controlkit compile examples/rl_balance.yaml --target c</div>
-              <div class="cli-line output">build/rl_c/rl_balance.h</div>
-              <div class="cli-line output">build/rl_c/rl_balance.c</div>
-              <div class="cli-line command">$ controlkit benchmark examples/rl_balance.yaml --no-rust</div>
-              <div class="cli-line output">python&nbsp;&nbsp;2693.08 ns/call</div>
-              <div class="cli-line output">c&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;6.00 ns/call</div>
+              <div class="cli-line"><span class="term-comment"># inspect → compile → benchmark</span></div>
+              <div class="cli-line">
+                <span class="term-prompt">$</span>
+                <span class="term-cmd">controlkit</span>
+                <span class="term-subcmd">inspect</span>
+                <span class="term-path">examples/mpc_temperature.yaml</span>
+              </div>
+              <div class="cli-line">
+                <span class="term-key">policy</span><span class="term-muted">:</span>
+                <span class="term-value">mpc</span>
+              </div>
+              <div class="cli-line">
+                <span class="term-key">mpc_controllers</span><span class="term-muted">:</span>
+                <span class="term-number">1</span>
+              </div>
+              <div class="cli-line">
+                <span class="term-prompt">$</span>
+                <span class="term-cmd">controlkit</span>
+                <span class="term-subcmd">compile</span>
+                <span class="term-path">examples/rl_balance.yaml</span>
+                <span class="term-flag">--target</span>
+                <span class="term-value">c</span>
+              </div>
+              <div class="cli-line"><span class="term-path">build/rl_c/rl_balance.h</span></div>
+              <div class="cli-line"><span class="term-path">build/rl_c/rl_balance.c</span></div>
+              <div class="cli-line">
+                <span class="term-prompt">$</span>
+                <span class="term-cmd">controlkit</span>
+                <span class="term-subcmd">benchmark</span>
+                <span class="term-path">examples/rl_balance.yaml</span>
+                <span class="term-flag">--no-rust</span>
+              </div>
+              <div class="cli-line">
+                <span class="term-key">python</span>
+                <span class="term-number">2693.08</span>
+                <span class="term-muted">ns/call</span>
+              </div>
+              <div class="cli-line">
+                <span class="term-key">c</span>
+                <span class="term-number">6.00</span>
+                <span class="term-muted">ns/call</span>
+              </div>
             </div>
           </div>
-          <p class="example-caption">
-            Static terminal example showing inspect, compile, and benchmark commands in one flow.
-          </p>
 
           <div class="project-meta" aria-label="Project metadata">
-            <div>
-              <span>Timeline</span>
-              <strong>10 phases</strong>
-            </div>
             <div>
               <span>Language</span>
               <strong>Python</strong>
@@ -89,11 +117,25 @@
           </div>
 
           <p class="overview">
-            ControlKit started as a phase-by-phase research engineering project: first scaffold the
-            repository, then build a typed IR, then add policy frontends, code generators,
-            optimization passes, benchmarks, a CLI, MPC-lite, RL policy compilation, and finally
-            public-facing documentation. The result is a compact compiler workflow that makes the
-            deployment step explicit and testable.
+            ControlKit is built as a compact compiler workflow: a typed IR, policy frontends, code
+            generators, optimization passes, benchmarks, and a CLI. The deployment step becomes
+            explicit, inspectable, and testable instead of living as an ad hoc translation from
+            notebook math to firmware source.
+          </p>
+        </section>
+
+        <section id="philosophy" class="case-section">
+          <h2>Control Philosophy</h2>
+          <p class="pull-quote">
+            A controller is a small program with physical consequences. ControlKit treats it that
+            way: typed at the boundary, explicit about dimensions, deterministic in generated code,
+            and measured before deployment.
+          </p>
+          <p>
+            The goal is not to replace modeling tools or hide the math. The goal is to make the
+            deployment boundary boring: preserve the control law, reject impossible shapes early,
+            emit source a firmware engineer can read, and benchmark the artifact that will actually
+            run on target hardware.
           </p>
         </section>
 
@@ -141,8 +183,8 @@
           <h2>Compiler Contracts</h2>
           <p>
             ControlKit's main technical bet is that embedded control code should be generated from
-            explicit contracts rather than from loose Python objects. Every phase adds a narrow
-            boundary: frontend specs validate user intent, IR nodes validate dimensions, backends
+            explicit contracts rather than from loose Python objects. Each compiler layer adds a
+            narrow boundary: frontend specs validate user intent, IR nodes validate dimensions, backends
             validate target support, and benchmarks validate runtime behavior against a reference.
           </p>
           <div class="detail-grid">
@@ -263,107 +305,148 @@ for layer in layers:
 
         <section id="frontends" class="case-section">
           <h2>Frontends</h2>
-          <div class="three-col">
-            <div>
-              <h3>LQR</h3>
-              <p>Accepts a gain matrix and optional saturation, then lowers to <code>u = -Kx</code>.</p>
+          <p>
+            Frontends keep user-facing specs small and policy-specific. LQR specs describe a gain
+            matrix, MPC-lite specs describe discrete dynamics and box constraints, and RL specs
+            point to fixed-shape JSON weights.
+          </p>
+          <div class="wide-table" role="table" aria-label="ControlKit frontend support">
+            <div role="row">
+              <strong role="cell">LQR</strong>
+              <span role="cell">Feedback control lowered as <code>u = -Kx</code>, with optional saturation.</span>
             </div>
-            <div>
-              <h3>MPC-lite</h3>
-              <p>
-                Accepts discrete dynamics, diagonal costs, box constraints, horizon length, and
-                projected-gradient solver settings.
-              </p>
+            <div role="row">
+              <strong role="cell">MPC-lite</strong>
+              <span role="cell">Finite-horizon projected-gradient control over <code>x_next = Ax + Bu</code>.</span>
             </div>
-            <div>
-              <h3>RL MLP</h3>
-              <p>
-                Accepts JSON weights for fixed-shape Linear, ReLU, and Tanh layers, then lowers to
-                neural-network inference IR.
-              </p>
+            <div role="row">
+              <strong role="cell">RL MLP</strong>
+              <span role="cell">Dependency-free inference for Linear, ReLU, and Tanh layers.</span>
             </div>
           </div>
-          <pre><code>controlkit validate examples/lqr_cartpole.yaml
-controlkit validate examples/mpc_temperature.yaml
-controlkit validate examples/rl_balance.yaml</code></pre>
-          <div class="example-grid">
-            <div>
-              <h3>LQR cart-pole</h3>
-              <pre><code>policy: lqr
-state_dim: 4
-control_dim: 1
-K:
-  - [12.1, 5.8, 31.2, 6.4]
-u_min: [-10.0]
-u_max: [10.0]</code></pre>
-              <p class="example-caption">
-                Static YAML example for a saturated feedback controller.
-              </p>
-            </div>
-            <div>
-              <h3>MPC temperature loop</h3>
-              <pre><code>policy: mpc
-horizon: 6
-A:
-  - [1.0, 0.1]
-  - [0.0, 0.98]
-B:
-  - [0.0]
-  - [0.05]
-q: [1.0, 0.2]
-r: [0.05]
-u_min: [-1.0]
-u_max: [1.0]</code></pre>
-              <p class="example-caption">
-                Static YAML example for a small finite-horizon controller.
-              </p>
-            </div>
-            <div>
-              <h3>RL balance policy</h3>
-              <pre><code>policy: rl
-input_dim: 2
-output_dim: 1
-weights_path: rl_balance_weights.json
+        </section>
 
-# JSON layers:
-# Linear -> ReLU -> Linear -> Tanh</code></pre>
-              <p class="example-caption">
-                Static YAML example that points to fixed-shape JSON weights.
-              </p>
-            </div>
-          </div>
-          <div class="snippet-pair">
+        <section id="custom-example" class="case-section">
+          <h2>Custom Example</h2>
+          <p>
+            Here is a complete one-input controller workflow for a tiny two-state room model. The
+            controller reads the current temperature error and error rate, computes
+            <code>u = -Kx</code>, clips the actuator command, emits C, and benchmarks the generated
+            artifact.
+          </p>
+          <div class="walkthrough">
             <div>
-              <pre><code>policy: mpc
+              <h3>1. Write the spec</h3>
+              <pre><code># custom_room_lqr.yaml
+# x[0] = temperature error, x[1] = error rate
+# u[0] = heater/cooler command clipped to [-1, 1]
+policy: lqr
+name: room_temperature
 state_dim: 2
 control_dim: 1
-horizon: 6
-A:
-  - [1.0, 0.1]
-  - [0.0, 0.98]
-B:
-  - [0.0]
-  - [0.05]
-q: [1.0, 0.2]
-r: [0.05]
+state_name: x
+control_name: u
+K:
+  - [0.75, 0.18]
 u_min: [-1.0]
 u_max: [1.0]</code></pre>
-              <p class="example-caption">
-                Full inline MPC spec with dynamics, costs, and input bounds.
-              </p>
             </div>
             <div>
-              <pre><code>{
-  "input_dim": 2,
-  "output_dim": 1,
-  "layers": [
-    {"type": "linear", "weights": [[0.4, -0.2]], "bias": [0.1]},
-    {"type": "tanh"}
-  ]
-}</code></pre>
-              <p class="example-caption">
-                JSON weight payload for a tiny neural-network policy.
-              </p>
+              <h3>2. Inspect and validate</h3>
+              <pre><code># Fail early if dimensions or bounds are wrong.
+controlkit validate custom_room_lqr.yaml
+
+# Inspect the lowered module before generation.
+controlkit inspect custom_room_lqr.yaml
+
+# Expected shape summary:
+# policy: lqr
+# state_dim: 2
+# control_dim: 1
+# controllers: 1</code></pre>
+            </div>
+            <div>
+              <h3>3. Compile to C</h3>
+              <pre><code># Emit deterministic C source and header files.
+controlkit compile custom_room_lqr.yaml \
+  --target c \
+  --output build/room_c
+
+# Generated artifact surface:
+# void control_step(
+#   const float x[CONTROLKIT_STATE_DIM],
+#   float u[CONTROLKIT_CONTROL_DIM]
+# );</code></pre>
+            </div>
+            <div>
+              <h3>4. Benchmark the artifact</h3>
+              <pre><code># Compare Python reference latency with generated C.
+controlkit benchmark custom_room_lqr.yaml \
+  --output build/room_bench \
+  --iterations 1000 \
+  --warmup-iterations 10
+
+# Report includes:
+# python_ns_per_call
+# c_ns_per_call
+# operation_count
+# memory_footprint_bytes</code></pre>
+            </div>
+          </div>
+        </section>
+
+        <section id="case-study" class="case-section">
+          <h2>Aerospace Case Study</h2>
+          <p>
+            Consider a small satellite attitude loop where a reaction wheel applies torque around a
+            single body axis. The controller state is angle error and angular-rate error; the output
+            is a bounded wheel torque command. This is an illustrative deployment example, not a
+            flight-certified controller.
+          </p>
+          <div class="walkthrough">
+            <div>
+              <h3>Plant abstraction</h3>
+              <pre><code># State vector:
+# x[0] = attitude error, radians
+# x[1] = angular-rate error, rad/s
+#
+# Control:
+# u[0] = reaction-wheel torque command
+#
+# Control law:
+# u = clip(-Kx, -0.025, 0.025)</code></pre>
+            </div>
+            <div>
+              <h3>Controller spec</h3>
+              <pre><code>policy: lqr
+name: reaction_wheel_axis
+state_dim: 2
+control_dim: 1
+state_name: attitude_error
+control_name: wheel_torque
+K:
+  - [0.042, 0.318]
+u_min: [-0.025]
+u_max: [0.025]</code></pre>
+            </div>
+            <div>
+              <h3>Generated boundary</h3>
+              <pre><code># Firmware calls one deterministic function.
+void control_step(
+    const float x[2],
+    float u[1]
+);
+
+# No heap allocation.
+# Fixed loop bounds.
+# Saturation emitted inline.</code></pre>
+            </div>
+            <div>
+              <h3>What gets checked</h3>
+              <pre><code># K must be 1 x 2.
+# u_min/u_max must have length 1.
+# generated C is benchmarked against Python.
+# report includes latency and operation count.</code></pre>
             </div>
           </div>
         </section>
@@ -496,71 +579,26 @@ after:  matvec(K, x)</code></pre>
           <div class="example-grid compact-examples">
             <div>
               <h3>Compile C</h3>
-              <pre><code>controlkit compile examples/lqr_cartpole.yaml \
+              <pre><code># Generate standalone C output.
+controlkit compile examples/lqr_cartpole.yaml \
   --target c \
   --output build/lqr_c</code></pre>
-              <p class="example-caption">Static command for generating standalone C output.</p>
             </div>
             <div>
               <h3>Compile Rust</h3>
-              <pre><code>controlkit compile examples/mpc_temperature.yaml \
+              <pre><code># Generate fixed-array Rust output.
+controlkit compile examples/mpc_temperature.yaml \
   --target rust \
   --output build/mpc_rs</code></pre>
-              <p class="example-caption">Static command for generating fixed-array Rust output.</p>
             </div>
             <div>
               <h3>Benchmark</h3>
-              <pre><code>controlkit benchmark examples/rl_balance.yaml \
+              <pre><code># Compare reference and generated runtime.
+controlkit benchmark examples/rl_balance.yaml \
   --iterations 1000 \
   --warmup-iterations 10</code></pre>
-              <p class="example-caption">Static command for comparing reference and generated runtime.</p>
             </div>
           </div>
-        </section>
-
-        <section id="demo" class="case-section">
-          <h2>Run It Locally</h2>
-          <div class="gif-grid" aria-label="Animated ControlKit command examples">
-            <figure class="gif-card">
-              <div class="gif-stage">
-                <span>$ controlkit inspect examples/mpc_temperature.yaml</span>
-                <span>policy: mpc</span>
-                <span>state_dim: 2</span>
-                <span>control_dim: 1</span>
-                <span>mpc_controllers: 1</span>
-              </div>
-              <figcaption>
-                Animated inspect demo showing a YAML spec lowering into one MPC controller.
-              </figcaption>
-            </figure>
-            <figure class="gif-card">
-              <div class="gif-stage gif-stage-alt">
-                <span>$ controlkit benchmark examples/rl_balance.yaml</span>
-                <span>python reference: 2693.08 ns/call</span>
-                <span>generated c: 6.00 ns/call</span>
-                <span>operation count: 26</span>
-                <span>report: build/benchmarks/rl_balance.md</span>
-              </div>
-              <figcaption>
-                Animated benchmark demo showing reference latency, C latency, and report output.
-              </figcaption>
-            </figure>
-          </div>
-          <pre><code>git clone https://github.com/GEEGABYTE1/controlkit.git
-cd controlkit
-python -m pip install -e ".[dev]"
-controlkit inspect examples/rl_balance.yaml
-controlkit compile examples/rl_balance.yaml --target c --output build/rl_c
-controlkit benchmark examples/rl_balance.yaml --output build/benchmarks --no-rust</code></pre>
-          <p class="example-caption">
-            Static end-to-end setup path: install the package, inspect a policy, compile C, and run
-            a benchmark report.
-          </p>
-          <p>
-            The repository also includes a fuller Markdown article, benchmark summary, architecture
-            diagram, demo walkthrough, and an Obsidian-compatible textbook for the concepts behind
-            the compiler.
-          </p>
         </section>
 
         <section id="takeaways" class="case-section">
