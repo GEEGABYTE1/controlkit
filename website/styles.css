@@ -348,7 +348,7 @@ p {
 
 .project-meta {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0;
   margin: 22px 0;
   border-top: 1px solid var(--line);
@@ -405,7 +405,7 @@ p {
 }
 
 .flow-diagram {
-  grid-template-columns: repeat(6, minmax(110px, 1fr));
+  grid-template-columns: repeat(7, minmax(100px, 1fr));
   overflow-x: auto;
 }
 

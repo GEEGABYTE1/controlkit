@@ -39,6 +39,7 @@
         <a href="#backends">Backends</a>
         <a href="#optimization">Optimization</a>
         <a href="#benchmarks">Benchmarks</a>
+        <a href="#verification">Verification</a>
         <a href="#takeaways">Takeaways</a>
       </aside>
 
@@ -53,50 +54,42 @@
           <div class="hero-visual" aria-label="ControlKit command line demo">
             <div class="visual-top">
               <span>controlkit demo</span>
-              <span>typed IR → C/Rust → benchmark</span>
+              <span>verify → compile → benchmark</span>
             </div>
             <div class="terminal-flow">
-              <div class="cli-line"><span class="term-comment"># inspect → compile → benchmark</span></div>
+              <div class="cli-line"><span class="term-comment"># verify → compile → benchmark</span></div>
               <div class="cli-line">
                 <span class="term-prompt">$</span>
                 <span class="term-cmd">controlkit</span>
-                <span class="term-subcmd">inspect</span>
-                <span class="term-path">examples/mpc_temperature.yaml</span>
+                <span class="term-subcmd">verify</span>
+                <span class="term-path">benchmarks/double_integrator_lqr/controller.yaml</span>
               </div>
               <div class="cli-line">
-                <span class="term-key">policy</span><span class="term-muted">:</span>
-                <span class="term-value">mpc</span>
+                <span class="term-path">outputs/verification/double_integrator_lqr_verification.json</span>
               </div>
               <div class="cli-line">
-                <span class="term-key">mpc_controllers</span><span class="term-muted">:</span>
-                <span class="term-number">1</span>
+                <span class="term-key">passed</span><span class="term-muted">:</span>
+                <span class="term-value">true</span>
               </div>
-              <div class="cli-line">
-                <span class="term-prompt">$</span>
-                <span class="term-cmd">controlkit</span>
-                <span class="term-subcmd">compile</span>
-                <span class="term-path">examples/rl_balance.yaml</span>
-                <span class="term-flag">--target</span>
-                <span class="term-value">c</span>
-              </div>
-              <div class="cli-line"><span class="term-path">build/rl_c/rl_balance.h</span></div>
-              <div class="cli-line"><span class="term-path">build/rl_c/rl_balance.c</span></div>
               <div class="cli-line">
                 <span class="term-prompt">$</span>
                 <span class="term-cmd">controlkit</span>
                 <span class="term-subcmd">benchmark</span>
-                <span class="term-path">examples/rl_balance.yaml</span>
-                <span class="term-flag">--no-rust</span>
+                <span class="term-flag">--all</span>
+              </div>
+              <div class="cli-line"><span class="term-path">outputs/benchmarks/double_integrator_lqr/report.md</span></div>
+              <div class="cli-line"><span class="term-path">outputs/benchmarks/rocket_hover_lqr/report.md</span></div>
+              <div class="cli-line">
+                <span class="term-key">benchmark_cases</span><span class="term-muted">:</span>
+                <span class="term-number">4</span>
               </div>
               <div class="cli-line">
-                <span class="term-key">python</span>
-                <span class="term-number">2693.08</span>
-                <span class="term-muted">ns/call</span>
+                <span class="term-key">reports</span><span class="term-muted">:</span>
+                <span class="term-value">json + markdown</span>
               </div>
               <div class="cli-line">
-                <span class="term-key">c</span>
-                <span class="term-number">6.00</span>
-                <span class="term-muted">ns/call</span>
+                <span class="term-key">status</span><span class="term-muted">:</span>
+                <span class="term-value">pass/fail criteria checked</span>
               </div>
             </div>
           </div>
@@ -114,13 +107,17 @@
               <span>Policies</span>
               <strong>LQR, MPC-lite, RL MLP</strong>
             </div>
+            <div>
+              <span>Assurance</span>
+              <strong>Verification, benchmarks</strong>
+            </div>
           </div>
 
           <p class="overview">
-            ControlKit is built as a compact compiler workflow: a typed IR, policy frontends, code
-            generators, optimization passes, benchmarks, and a CLI. The deployment step becomes
-            explicit, inspectable, and testable instead of living as an ad hoc translation from
-            notebook math to firmware source.
+            ControlKit is built as a compact compiler workflow: typed IR, policy frontends, code
+            generators, optimization passes, verification reports, closed-loop benchmarks, and a
+            CLI. The deployment step becomes explicit, inspectable, and testable instead of living
+            as an ad hoc translation from notebook math to firmware source.
           </p>
         </section>
 
@@ -161,13 +158,14 @@
           <p>
             The core pipeline is deliberately small: specs enter through YAML or Python APIs,
             frontends enforce controller-specific contracts, IR nodes preserve shape and semantic
-            information, optimization passes rewrite safe expression trees, and backends emit
-            deterministic C or Rust.
+            information, verification checks reject unsafe shapes or unstable feedback, optimization
+            passes rewrite safe expression trees, and backends emit deterministic C or Rust.
           </p>
           <div class="flow-diagram" aria-label="ControlKit architecture diagram">
             <span>Spec</span>
             <span>Frontend</span>
             <span>IR</span>
+            <span>Verify</span>
             <span>Optimization</span>
             <span>Backend</span>
             <span>Benchmark</span>
@@ -184,8 +182,9 @@
           <p>
             ControlKit's main technical bet is that embedded control code should be generated from
             explicit contracts rather than from loose Python objects. Each compiler layer adds a
-            narrow boundary: frontend specs validate user intent, IR nodes validate dimensions, backends
-            validate target support, and benchmarks validate runtime behavior against a reference.
+            narrow boundary: frontend specs validate user intent, IR nodes validate dimensions,
+            verification checks stability and constraints, backends validate target support, and
+            benchmarks validate runtime behavior against a reference.
           </p>
           <div class="detail-grid">
             <div>
@@ -212,8 +211,8 @@
             <div>
               <h3>Validation contract</h3>
               <p>
-                Generated artifacts are benchmarked with a Python reference path and optional
-                native compilation when <code>cc</code> or <code>rustc</code> is available.
+                Controllers can be verified for dimensions, closed-loop stability, constraints,
+                numerical robustness, and generated-code consistency hooks.
               </p>
             </div>
           </div>
@@ -527,78 +526,120 @@ after:  matvec(K, x)</code></pre>
         <section id="benchmarks" class="case-section">
           <h2>Benchmarks</h2>
           <p>
-            Benchmarks are not just a performance flex; they are validation pressure. The runner
-            measures Python reference execution, generated C when <code>cc</code> is available,
-            generated Rust when <code>rustc</code> is available, and reports operation-count and
-            memory-footprint estimates.
+            ControlKit now includes a closed-loop benchmark suite, not just isolated function
+            timing. Each case has a problem statement, deterministic model, controller spec, local
+            runner, expected results, and JSON/Markdown reports.
           </p>
           <div class="metric-grid">
             <div>
-              <span>LQR C</span>
-              <strong>10.00 ns/call</strong>
+              <span>Benchmark cases</span>
+              <strong>4</strong>
             </div>
             <div>
-              <span>MPC-lite C</span>
-              <strong>33.00 ns/call</strong>
+              <span>Metrics</span>
+              <strong>runtime, error, effort</strong>
             </div>
             <div>
-              <span>RL MLP C</span>
-              <strong>6.00 ns/call</strong>
+              <span>Reports</span>
+              <strong>JSON, Markdown</strong>
             </div>
           </div>
-          <div class="wide-table performance-table" role="table" aria-label="Representative ControlKit benchmark metrics">
+          <div class="wide-table performance-table" role="table" aria-label="ControlKit benchmark suite">
             <div role="row">
-              <strong role="cell">LQR cart-pole</strong>
-              <span role="cell">Python reference: 2145.84 ns/call. Generated C: 10.00 ns/call. Rust: skipped in the smoke run when <code>--no-rust</code> was set.</span>
+              <strong role="cell">double_integrator_lqr</strong>
+              <span role="cell">Two-state position/velocity stabilization with acceleration saturation.</span>
             </div>
             <div role="row">
-              <strong role="cell">MPC temperature</strong>
-              <span role="cell">Python reference: 37710.29 ns/call. Generated C: 33.00 ns/call. The native loop includes rollout, costate propagation, gradient update, and clipping.</span>
+              <strong role="cell">cartpole_lqr_linearized</strong>
+              <span role="cell">Small-angle cartpole stabilization around upright equilibrium.</span>
             </div>
             <div role="row">
-              <strong role="cell">RL balance MLP</strong>
-              <span role="cell">Python reference: 2693.08 ns/call. Generated C: 6.00 ns/call. Static estimate: 12 multiplications, 12 additions, 2 activations, 84 bytes of parameters and activations.</span>
+              <strong role="cell">rocket_hover_lqr</strong>
+              <span role="cell">Toy hover linearization with thrust and torque commands.</span>
+            </div>
+            <div role="row">
+              <strong role="cell">pid_mass_spring_damper</strong>
+              <span role="cell">Reference PID regulation of a damped mass-spring system.</span>
             </div>
           </div>
-          <pre data-file="rl_balance.json" data-lang="json"><code>{
-  "policy": "rl",
-  "python_ns_per_call": 2693.08,
-  "c_ns_per_call": 6.00,
-  "operation_count": {
-    "multiplications": 12,
-    "additions": 12,
-    "activations": 2
-  },
-  "memory_footprint_bytes": 84
+          <pre data-file="results.json" data-lang="json"><code>{
+  "benchmark_name": "double_integrator_lqr",
+  "controller_type": "lqr",
+  "dt": 0.05,
+  "horizon_steps": 120,
+  "mean_runtime_us": 1.26,
+  "max_runtime_us": 5.50,
+  "p95_runtime_us": 1.66,
+  "final_state_norm": 0.002575,
+  "max_state_norm": 1.043344,
+  "total_control_effort": 1.410541,
+  "passed": true,
+  "failure_reason": ""
 }</code></pre>
           <p>
-            The benchmark output is designed to answer two separate questions: whether the emitted
-            artifact agrees with the reference behavior, and whether the target implementation is
-            plausible for a real-time control loop.
+            The suite measures controller runtime, final stabilization error, maximum state norm,
+            total control effort, and pass/fail criteria. When generated C is available, the runner
+            also records generated-code runtime beside the Python reference path.
           </p>
           <div class="example-grid compact-examples">
             <div>
-              <h3>Compile C</h3>
-              <pre data-file="terminal" data-lang="shell"><code># Generate standalone C output.
-controlkit compile examples/lqr_cartpole.yaml \
-  --target c \
-  --output build/lqr_c</code></pre>
+              <h3>Run one case</h3>
+              <pre data-file="terminal" data-lang="shell"><code># Closed-loop simulation + report output.
+controlkit benchmark \
+  benchmarks/double_integrator_lqr/controller.yaml</code></pre>
             </div>
             <div>
-              <h3>Compile Rust</h3>
-              <pre data-file="terminal" data-lang="shell"><code># Generate fixed-array Rust output.
-controlkit compile examples/mpc_temperature.yaml \
-  --target rust \
-  --output build/mpc_rs</code></pre>
+              <h3>Run the suite</h3>
+              <pre data-file="terminal" data-lang="shell"><code># Runs every folder under benchmarks/.
+controlkit benchmark --all</code></pre>
             </div>
             <div>
-              <h3>Benchmark</h3>
-              <pre data-file="terminal" data-lang="shell"><code># Compare reference and generated runtime.
-controlkit benchmark examples/rl_balance.yaml \
-  --iterations 1000 \
-  --warmup-iterations 10</code></pre>
+              <h3>Report files</h3>
+              <pre data-file="outputs.txt" data-lang="text"><code>outputs/benchmarks/<case>/results.json
+outputs/benchmarks/<case>/report.md</code></pre>
             </div>
           </div>
+        </section>
+
+        <section id="verification" class="case-section">
+          <h2>Verification</h2>
+          <p>
+            Verification adds a static assurance layer before deployment. It checks matrix shapes,
+            closed-loop stability, actuator and state constraints, numerical robustness, and keeps a
+            generated-code consistency hook ready for target execution adapters.
+          </p>
+          <div class="wide-table" role="table" aria-label="ControlKit verification checks">
+            <div role="row">
+              <strong role="cell">Dimensions</strong>
+              <span role="cell">Ensures <code>A</code> is square, <code>B</code> matches <code>A</code>, and <code>K</code> is compatible with <code>u = -Kx</code>.</span>
+            </div>
+            <div role="row">
+              <strong role="cell">Stability</strong>
+              <span role="cell">Checks <code>A_cl = A - BK</code>; discrete systems require spectral radius below one, continuous systems require negative real eigenvalues.</span>
+            </div>
+            <div role="row">
+              <strong role="cell">Constraints</strong>
+              <span role="cell">Validates lower/upper bounds and warns when feedback can exceed actuator limits before saturation.</span>
+            </div>
+            <div role="row">
+              <strong role="cell">Numerics</strong>
+              <span role="cell">Rejects NaN/Inf values, reports condition numbers, and warns near stability boundaries.</span>
+            </div>
+          </div>
+          <pre data-file="terminal" data-lang="shell"><code># Emit machine-readable and human-readable verification reports.
+controlkit verify benchmarks/double_integrator_lqr/controller.yaml</code></pre>
+          <pre data-file="double_integrator_lqr_verification.json" data-lang="json"><code>{
+  "controller_name": "double_integrator_lqr",
+  "system_type": "discrete",
+  "passed": true,
+  "stability_margin": 0.048685,
+  "warnings": [
+    "closed-loop eigenvalues are close to the stability boundary"
+  ],
+  "recommendations": [
+    "Review warnings before deploying to constrained hardware."
+  ]
+}</code></pre>
         </section>
 
         <section id="takeaways" class="case-section">
