@@ -7,6 +7,9 @@ from controlkit.benchmarks.runner import (
     BenchmarkReport,
     BenchmarkResult,
     benchmark_module,
+    is_benchmark_case_path,
+    run_all_benchmark_cases,
+    run_benchmark_case,
 )
 
 __all__ = [
@@ -14,5 +17,7 @@ __all__ = [
     "BenchmarkReport",
     "BenchmarkResult",
     "benchmark_module",
+    "is_benchmark_case_path",
+    "run_all_benchmark_cases",
+    "run_benchmark_case",
 ]
-

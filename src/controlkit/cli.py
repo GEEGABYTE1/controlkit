@@ -9,7 +9,13 @@ from typing import Sequence
 from controlkit import __version__
 from controlkit.backends.c import CBackend
 from controlkit.backends.rust import RustBackend
-from controlkit.benchmarks import BenchmarkConfig, benchmark_module
+from controlkit.benchmarks import (
+    BenchmarkConfig,
+    benchmark_module,
+    is_benchmark_case_path,
+    run_all_benchmark_cases,
+    run_benchmark_case,
+)
 from controlkit.compiler.targets import TargetLanguage
 from controlkit.exceptions import ControlKitError
 from controlkit.frontend import ControllerSpecError, load_controller_spec
@@ -63,7 +69,17 @@ def build_parser() -> argparse.ArgumentParser:
         "benchmark",
         help="Benchmark a controller spec and write JSON/Markdown reports.",
     )
-    benchmark_parser.add_argument("spec", type=Path, help="Path to a controller YAML spec.")
+    benchmark_parser.add_argument(
+        "spec",
+        nargs="?",
+        type=Path,
+        help="Path to a controller YAML spec or benchmark case controller.yaml.",
+    )
+    benchmark_parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Run every benchmark case under benchmarks/.",
+    )
     benchmark_parser.add_argument(
         "--output",
         type=Path,
@@ -89,6 +105,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip generated Rust benchmark.",
     )
     benchmark_parser.set_defaults(handler=_handle_benchmark)
+
+    verify_parser = subparsers.add_parser(
+        "verify",
+        help="Verify dimensions, stability, constraints, and numerical robustness.",
+    )
+    verify_parser.add_argument("spec", type=Path, help="Path to a controller YAML spec.")
+    verify_parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("outputs/verification"),
+        help="Output directory for verification reports.",
+    )
+    verify_parser.set_defaults(handler=_handle_verify)
 
     return parser
 
@@ -151,6 +180,19 @@ def _handle_benchmark(args: argparse.Namespace) -> None:
         raise ControlKitError("--iterations must be positive")
     if args.warmup_iterations < 0:
         raise ControlKitError("--warmup-iterations must be non-negative")
+    if args.all:
+        reports = run_all_benchmark_cases(output_root=args.output, iterations=args.iterations)
+        for metrics in reports:
+            print(args.output / metrics.benchmark_name / "results.json")
+            print(args.output / metrics.benchmark_name / "report.md")
+        return
+    if args.spec is None:
+        raise ControlKitError("benchmark requires a spec path unless --all is used")
+    if is_benchmark_case_path(args.spec):
+        metrics = run_benchmark_case(args.spec, output_root=args.output, iterations=args.iterations)
+        print(args.output / metrics.benchmark_name / "results.json")
+        print(args.output / metrics.benchmark_name / "report.md")
+        return
     loaded = load_controller_spec(args.spec)
     report = benchmark_module(
         loaded.module,
@@ -165,3 +207,11 @@ def _handle_benchmark(args: argparse.Namespace) -> None:
     markdown_path = report.write_markdown(args.output / f"{loaded.module.name}.md")
     print(json_path)
     print(markdown_path)
+
+
+def _handle_verify(args: argparse.Namespace) -> None:
+    from controlkit.verify.report import verify_controller_file
+
+    report = verify_controller_file(args.spec, args.output)
+    print(report.json_path)
+    print(report.markdown_path)

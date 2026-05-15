@@ -7,12 +7,16 @@ import math
 import shutil
 import subprocess
 import time
+import importlib.util
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import ModuleType
 
 from controlkit.backends.c import CBackend
 from controlkit.backends.rust import RustBackend
+from controlkit.benchmarks.metrics import ClosedLoopMetrics, control_effort, percentile, vector_norm
+from controlkit.benchmarks.reporting import write_benchmark_outputs
 from controlkit.compiler.ir import (
     Add,
     Clip,
@@ -32,6 +36,7 @@ from controlkit.compiler.ir import (
     Zero,
 )
 from controlkit.optimization import estimate_operation_count
+from controlkit.frontend.specs import _parse_simple_yaml, load_controller_spec
 
 
 @dataclass(frozen=True)
@@ -112,6 +117,114 @@ def benchmark_module(module: IRModule, config: BenchmarkConfig | None = None) ->
     )
 
 
+def run_benchmark_case(
+    controller_path: Path,
+    *,
+    output_root: Path = Path("outputs/benchmarks"),
+    iterations: int = 200,
+    include_generated: bool = True,
+) -> ClosedLoopMetrics:
+    """Run a closed-loop benchmark case folder and write report artifacts."""
+
+    case_dir = controller_path.parent
+    model = _load_model(case_dir / "model.py")
+    raw = _parse_simple_yaml(controller_path.read_text(encoding="utf-8"))
+    config = model.BENCHMARK
+    name = str(config["name"])
+    dt = float(config["dt"])
+    horizon_steps = int(config["horizon_steps"])
+    initial_state = [float(value) for value in config["initial_state"]]
+    controller_type = str(raw["policy"])
+    state = list(initial_state)
+    runtimes_us: list[float] = []
+    total_effort = 0.0
+    max_norm = vector_norm(state)
+    pid_integral = 0.0
+    previous_error = 0.0
+
+    for _ in range(horizon_steps):
+        start = time.perf_counter_ns()
+        if controller_type == "pid":
+            control, pid_integral, previous_error = _pid_control(
+                raw=raw,
+                state=state,
+                dt=dt,
+                integral=pid_integral,
+                previous_error=previous_error,
+            )
+        else:
+            control = _feedback_control(raw=raw, state=state)
+        elapsed = time.perf_counter_ns() - start
+        runtimes_us.append(elapsed / 1000.0)
+        total_effort += control_effort(control, dt)
+        state = [float(value) for value in model.step(state, control, dt)]
+        max_norm = max(max_norm, vector_norm(state))
+
+    final_norm = vector_norm(state)
+    criteria = config.get("pass_criteria", {})
+    failures: list[str] = []
+    max_final = criteria.get("max_final_state_norm")
+    if max_final is not None and final_norm > float(max_final):
+        failures.append(f"final_state_norm {final_norm:.6g} > {float(max_final):.6g}")
+    max_allowed_norm = criteria.get("max_state_norm")
+    if max_allowed_norm is not None and max_norm > float(max_allowed_norm):
+        failures.append(f"max_state_norm {max_norm:.6g} > {float(max_allowed_norm):.6g}")
+    max_effort = criteria.get("max_control_effort")
+    if max_effort is not None and total_effort > float(max_effort):
+        failures.append(f"total_control_effort {total_effort:.6g} > {float(max_effort):.6g}")
+
+    generated_runtime = None
+    if include_generated and controller_type in {"lqr", "mpc", "rl"}:
+        generated_runtime = _generated_runtime_us(controller_path, iterations)
+
+    metrics = ClosedLoopMetrics(
+        benchmark_name=name,
+        controller_type=controller_type,
+        dt=dt,
+        horizon_steps=horizon_steps,
+        mean_runtime_us=sum(runtimes_us) / len(runtimes_us),
+        max_runtime_us=max(runtimes_us),
+        p95_runtime_us=percentile(runtimes_us, 95.0),
+        final_state_norm=final_norm,
+        max_state_norm=max_norm,
+        total_control_effort=total_effort,
+        passed=not failures,
+        failure_reason="; ".join(failures),
+        generated_mean_runtime_us=generated_runtime,
+    )
+    write_benchmark_outputs(
+        output_dir=output_root / name,
+        metrics=metrics,
+        description=str(config["description"]),
+        dynamics_equations=str(config["dynamics_equations"]),
+        controller_description=str(config["controller_description"]),
+        limitations=str(config.get("limitations", "Simple deterministic benchmark model.")),
+    )
+    return metrics
+
+
+def run_all_benchmark_cases(
+    benchmarks_root: Path = Path("benchmarks"),
+    *,
+    output_root: Path = Path("outputs/benchmarks"),
+    iterations: int = 200,
+) -> tuple[ClosedLoopMetrics, ...]:
+    cases = []
+    for controller_path in sorted(benchmarks_root.glob("*/controller.yaml")):
+        cases.append(
+            run_benchmark_case(
+                controller_path,
+                output_root=output_root,
+                iterations=iterations,
+            )
+        )
+    return tuple(cases)
+
+
+def is_benchmark_case_path(path: Path) -> bool:
+    return path.name == "controller.yaml" and (path.parent / "model.py").exists()
+
+
 def estimate_memory_footprint(module: IRModule) -> int:
     matrices = _collect_matrices(module)
     matrix_bytes = sum(matrix.rows * matrix.cols * 4 for matrix in matrices)
@@ -144,6 +257,80 @@ def estimate_memory_footprint(module: IRModule) -> int:
         for vector in _collect_vectors(law.expression):
             vector_dims += vector.dim
     return matrix_bytes + vector_dims * 4 + mpc_bytes + rl_bytes
+
+
+def _load_model(path: Path) -> ModuleType:
+    if not path.exists():
+        raise FileNotFoundError(f"benchmark model does not exist: {path}")
+    spec = importlib.util.spec_from_file_location(f"controlkit_benchmark_{path.parent.name}", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load benchmark model: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    if not hasattr(module, "BENCHMARK") or not hasattr(module, "step"):
+        raise ValueError(f"benchmark model must define BENCHMARK and step(): {path}")
+    return module
+
+
+def _feedback_control(*, raw: dict[str, object], state: list[float]) -> list[float]:
+    gain = raw.get("gain_matrix")
+    if not isinstance(gain, list):
+        raise ValueError("feedback benchmark requires gain_matrix")
+    output = [-sum(float(value) * state[col] for col, value in enumerate(row)) for row in gain]
+    lower, upper = _control_bounds(raw, len(output))
+    return [min(max(output[index], lower[index]), upper[index]) for index in range(len(output))]
+
+
+def _pid_control(
+    *,
+    raw: dict[str, object],
+    state: list[float],
+    dt: float,
+    integral: float,
+    previous_error: float,
+) -> tuple[list[float], float, float]:
+    target = float(raw.get("target", 0.0))
+    error = target - state[0]
+    next_integral = integral + error * dt
+    derivative = (error - previous_error) / dt if dt > 0.0 else 0.0
+    control = float(raw.get("kp", 0.0)) * error
+    control += float(raw.get("ki", 0.0)) * next_integral
+    control += float(raw.get("kd", 0.0)) * derivative
+    lower, upper = _control_bounds(raw, 1)
+    return [min(max(control, lower[0]), upper[0])], next_integral, error
+
+
+def _control_bounds(raw: dict[str, object], control_dim: int) -> tuple[list[float], list[float]]:
+    saturation = raw.get("saturation")
+    if isinstance(saturation, dict):
+        lower = [float(saturation["lower"]) for _ in range(control_dim)]
+        upper = [float(saturation["upper"]) for _ in range(control_dim)]
+        return lower, upper
+    u_min = raw.get("u_min", [-math.inf for _ in range(control_dim)])
+    u_max = raw.get("u_max", [math.inf for _ in range(control_dim)])
+    if not isinstance(u_min, list) or not isinstance(u_max, list):
+        raise ValueError("u_min and u_max must be lists")
+    return [float(value) for value in u_min], [float(value) for value in u_max]
+
+
+def _generated_runtime_us(controller_path: Path, iterations: int) -> float | None:
+    try:
+        loaded = load_controller_spec(controller_path)
+        report = benchmark_module(
+            loaded.module,
+            BenchmarkConfig(
+                iterations=max(1, iterations),
+                warmup_iterations=5,
+                include_c=True,
+                include_rust=False,
+            ),
+        )
+    except Exception:
+        return None
+    for result in report.results:
+        if result.name == "c" and result.status == "ok" and result.latency_ns_per_call is not None:
+            return result.latency_ns_per_call / 1000.0
+    return None
 
 
 def _benchmark_python(module: IRModule, config: BenchmarkConfig) -> BenchmarkResult:

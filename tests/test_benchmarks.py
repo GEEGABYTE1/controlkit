@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from controlkit.benchmarks import BenchmarkConfig, benchmark_module
+from controlkit.benchmarks import run_benchmark_case
 from controlkit.compiler.ir import IRModule
 from controlkit.policies.lqr import LqrPolicy
 from controlkit.policies.mpc import MpcPolicy
@@ -128,3 +130,24 @@ def test_benchmark_module_reports_rl_python_reference() -> None:
     assert report.results[0].name == "python"
     assert report.results[0].status == "ok"
     assert "last_output=" in report.results[0].notes
+
+
+def test_benchmark_case_runner_produces_outputs(tmp_path) -> None:
+    metrics = run_benchmark_case(
+        Path("benchmarks/double_integrator_lqr/controller.yaml"),
+        output_root=tmp_path,
+        iterations=5,
+        include_generated=False,
+    )
+
+    assert metrics.benchmark_name == "double_integrator_lqr"
+    assert metrics.passed
+    assert (tmp_path / "double_integrator_lqr" / "results.json").exists()
+    assert (tmp_path / "double_integrator_lqr" / "report.md").exists()
+
+
+def test_benchmark_folders_have_required_files() -> None:
+    required = {"problem.md", "model.py", "controller.yaml", "run_benchmark.py", "expected_results.md"}
+    for case_dir in Path("benchmarks").iterdir():
+        if case_dir.is_dir():
+            assert required.issubset({path.name for path in case_dir.iterdir()})
