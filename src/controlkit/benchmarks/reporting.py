@@ -1,4 +1,3 @@
-"""Markdown and JSON output for benchmark suite runs."""
 
 from __future__ import annotations
 

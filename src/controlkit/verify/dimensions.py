@@ -1,9 +1,7 @@
-"""Dimension checks for controller and system matrices."""
+# Dimension checks for controller and system matrices.
 
 from __future__ import annotations
-
 from dataclasses import dataclass
-
 
 @dataclass(frozen=True)
 class CheckResult:

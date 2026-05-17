@@ -49,8 +49,6 @@ class BenchmarkConfig:
 
 @dataclass(frozen=True)
 class BenchmarkResult:
-    """Latency result for one implementation."""
-
     name: str
     status: str
     iterations: int
@@ -124,8 +122,6 @@ def run_benchmark_case(
     iterations: int = 200,
     include_generated: bool = True,
 ) -> ClosedLoopMetrics:
-    """Run a closed-loop benchmark case folder and write report artifacts."""
-
     case_dir = controller_path.parent
     model = _load_model(case_dir / "model.py")
     raw = _parse_simple_yaml(controller_path.read_text(encoding="utf-8"))

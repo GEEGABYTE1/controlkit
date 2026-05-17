@@ -1,4 +1,4 @@
-"""MPC-lite policy frontend."""
+# MPC-lite policy frontend
 
 from __future__ import annotations
 
@@ -18,7 +18,8 @@ from controlkit.policies.base import PolicyKind, PolicySpec
 
 
 class MpcSpecError(ValueError):
-    """Raised when an MPC-lite specification is malformed."""
+    # Raised when an MPC-lite specification is malformed.
+    pass
 
 
 @dataclass(frozen=True)

@@ -1,4 +1,4 @@
-"""Verification utilities for ControlKit controller specs."""
+# Verification utilities
 
 from __future__ import annotations
 

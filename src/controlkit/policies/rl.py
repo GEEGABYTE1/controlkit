@@ -1,4 +1,4 @@
-"""Small fixed-shape RL policy frontend."""
+# Small fixed-shape RL policy frontend.
 
 from __future__ import annotations
 
@@ -20,7 +20,8 @@ from controlkit.policies.base import PolicyKind, PolicySpec
 
 
 class RlSpecError(ValueError):
-    """Raised when an RL policy specification is malformed."""
+    # Raised when an RL policy specification is malformed.
+    pass
 
 
 @dataclass(frozen=True)

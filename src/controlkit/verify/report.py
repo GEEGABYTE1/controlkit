@@ -1,4 +1,4 @@
-"""Verification report orchestration."""
+# Verification report orchestration.
 
 from __future__ import annotations
 

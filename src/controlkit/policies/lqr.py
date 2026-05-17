@@ -1,4 +1,4 @@
-"""LQR policy frontend."""
+# LQR policy frontend.
 
 from __future__ import annotations
 
@@ -11,7 +11,8 @@ from controlkit.policies.base import PolicyKind, PolicySpec
 
 
 class LqrSpecError(ValueError):
-    """Raised when an LQR specification is malformed."""
+    # Raised when an LQR specification is malformed.
+    pass 
 
 
 @dataclass(frozen=True)
@@ -108,7 +109,7 @@ class LqrPolicy:
         state_names: Sequence[str] = (),
         control_names: Sequence[str] = (),
     ) -> LqrControllerSpec:
-        """Build a validated LQR spec from a numeric feedback gain matrix."""
+        # Build a validated LQR spec from a numeric feedback gain matrix.
 
         normalized_gain = _normalize_gain_matrix(gain_matrix)
         inferred_control_dim = len(normalized_gain)

@@ -1,4 +1,3 @@
-"""Metrics for closed-loop benchmark simulations."""
 
 from __future__ import annotations
 

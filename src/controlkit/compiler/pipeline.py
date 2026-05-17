@@ -12,7 +12,6 @@ from controlkit.policies.base import PolicyKind
 
 @dataclass(frozen=True)
 class CompileRequest:
-    """Inputs required to compile one control policy."""
 
     spec_path: Path
     policy: PolicyKind
@@ -22,15 +21,12 @@ class CompileRequest:
 
 @dataclass(frozen=True)
 class CompileResult:
-    """Result returned by the compiler pipeline."""
-
     success: bool
     message: str
 
 
 class CompilerPipeline:
-    """Coordinates frontend parsing, IR lowering, optimization, and code generation."""
-
+    
     def compile(self, request: CompileRequest) -> CompileResult:
         self._validate_request(request)
         try:

@@ -1,4 +1,4 @@
-"""Rust code generation backend."""
+# rust code generation backend
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ class RustBackendError(ValueError):
 
 @dataclass(frozen=True)
 class RustGeneratedArtifact:
-    """Generated Rust source artifact."""
+    #generated rust source artifact
 
     source_name: str
     source: str
@@ -64,7 +64,7 @@ class _EmitContext:
 
 @dataclass(frozen=True)
 class RustBackend:
-    """Generate deterministic no_std-compatible Rust for supported ControlKit IR modules."""
+    # Generate deterministic no_std-compatible Rust for supported ControlKit IR modules.
 
     unroll_loops: bool = False
 

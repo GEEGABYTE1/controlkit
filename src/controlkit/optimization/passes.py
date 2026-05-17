@@ -1,4 +1,4 @@
-"""Optimization passes over ControlKit IR."""
+# Optimization passes
 
 from __future__ import annotations
 
@@ -24,8 +24,6 @@ from controlkit.compiler.ir import (
 
 @dataclass(frozen=True)
 class OptimizationReport:
-    """Summary of changes and rough work estimates for an optimization run."""
-
     rewrites: int
     operations_before: int
     operations_after: int
@@ -33,15 +31,11 @@ class OptimizationReport:
 
 @dataclass(frozen=True)
 class OptimizationResult:
-    """Optimized module plus optimization metadata."""
-
     module: IRModule
     report: OptimizationReport
 
 
 class SimplifyPass:
-    """Apply conservative algebraic simplifications to IR expressions."""
-
     def run(self, module: IRModule) -> OptimizationResult:
         operations_before = estimate_operation_count(module)
         rewrites = 0
@@ -72,14 +66,10 @@ class SimplifyPass:
 
 
 def optimize_module(module: IRModule) -> OptimizationResult:
-    """Run the default optimization pipeline."""
-
     return SimplifyPass().run(module)
 
 
 def simplify_expr(expr: Expr) -> tuple[Expr, int]:
-    """Simplify one expression tree and return `(expression, rewrite_count)`."""
-
     if isinstance(expr, ScalarConstant | Zero):
         return expr, 0
 
@@ -159,8 +149,6 @@ def simplify_expr(expr: Expr) -> tuple[Expr, int]:
 
 
 def estimate_operation_count(module: IRModule) -> int:
-    """Estimate scalar arithmetic/comparison operations in an IR module."""
-
     total = 0
     for law in module.control_laws:
         total += _estimate_expr_operations(law.expression)

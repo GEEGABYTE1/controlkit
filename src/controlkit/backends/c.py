@@ -1,4 +1,4 @@
-"""C code generation backend."""
+# C generation backend
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ class CBackendError(ValueError):
 
 @dataclass(frozen=True)
 class CGeneratedArtifact:
-    """Generated C header/source pair."""
+    # Generated C header/source pair.
     header_name: str
     source_name: str
     header: str
@@ -67,8 +67,6 @@ class _EmitContext:
 
 @dataclass(frozen=True)
 class CBackend:
-    """Generate deterministic float32 C for supported ControlKit IR modules."""
-
     unroll_loops: bool = False
 
     def generate(self, module: IRModule) -> CGeneratedArtifact:

@@ -1,4 +1,4 @@
-"""Numerical robustness checks."""
+#numerical robustness checks
 
 from __future__ import annotations
 
@@ -87,12 +87,7 @@ def compare_generated_outputs(
     *,
     tolerance: float = 1e-5,
 ) -> dict[str, object]:
-    """Compare reference and generated outputs.
-
-    Pass ``generated_controller=None`` when generated-code execution is not wired in. This keeps
-    the API available as an extension point without pretending execution exists.
-    """
-
+    # Compare reference and generated outputs.
     if generated_controller is None:
         return {
             "available": False,

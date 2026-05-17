@@ -1,4 +1,4 @@
-"""Closed-loop stability checks."""
+# Closed-loop stability checks.
 
 from __future__ import annotations
 

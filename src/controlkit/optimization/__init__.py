@@ -1,4 +1,3 @@
-"""IR optimization passes."""
 
 from __future__ import annotations
 

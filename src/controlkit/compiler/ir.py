@@ -1,4 +1,4 @@
-"""Backend-neutral intermediate representation for control laws."""
+# Backend-neutral intermediate representation for control laws.
 
 from __future__ import annotations
 
@@ -11,11 +11,12 @@ if TYPE_CHECKING:
 
 
 class IRValidationError(ValueError):
-    """Raised when an IR node is malformed or shape-incompatible."""
+    # Raised when an IR node is malformed or shape-incompatible.
+    pass
 
 
 class ValueKind(StrEnum):
-    """Kinds of values expressible in ControlKit IR."""
+    # Kinds of values expressible in ControlKit IR.
 
     SCALAR = "scalar"
     VECTOR = "vector"
@@ -24,7 +25,6 @@ class ValueKind(StrEnum):
 
 @dataclass(frozen=True)
 class Shape:
-    """Static shape for an IR value."""
 
     kind: ValueKind
     rows: int = 1
@@ -65,7 +65,6 @@ class Shape:
 
 
 class Expr:
-    """Base class for typed IR expressions."""
 
     @property
     def shape(self) -> Shape:
@@ -74,7 +73,6 @@ class Expr:
 
 @dataclass(frozen=True)
 class ScalarConstant(Expr):
-    """Scalar numeric constant."""
 
     value: float
 
@@ -88,7 +86,6 @@ class ScalarConstant(Expr):
 
 @dataclass(frozen=True)
 class Zero(Expr):
-    """Typed zero value."""
 
     value_shape: Shape
 
@@ -102,7 +99,6 @@ class Zero(Expr):
 
 @dataclass(frozen=True)
 class Vector(Expr):
-    """Named vector value."""
 
     name: str
     dim: int
@@ -122,7 +118,6 @@ class Vector(Expr):
 
 @dataclass(frozen=True)
 class Matrix(Expr):
-    """Named matrix value."""
 
     name: str
     rows: int
@@ -146,7 +141,6 @@ class Matrix(Expr):
 
 @dataclass(frozen=True)
 class Neg(Expr):
-    """Unary negation."""
 
     value: Expr
 
@@ -163,7 +157,6 @@ class Neg(Expr):
 
 @dataclass(frozen=True)
 class ScalarMul(Expr):
-    """Scalar multiplication of a scalar, vector, or matrix expression."""
 
     scalar: Expr
     value: Expr
@@ -184,7 +177,6 @@ class ScalarMul(Expr):
 
 @dataclass(frozen=True)
 class MatVecMul(Expr):
-    """Matrix-vector multiplication."""
 
     matrix: Expr
     vector: Expr
@@ -212,7 +204,6 @@ class MatVecMul(Expr):
 
 @dataclass(frozen=True)
 class Add(Expr):
-    """Elementwise addition."""
 
     left: Expr
     right: Expr
@@ -230,7 +221,6 @@ class Add(Expr):
 
 @dataclass(frozen=True)
 class Sub(Expr):
-    """Elementwise subtraction."""
 
     left: Expr
     right: Expr
@@ -248,7 +238,6 @@ class Sub(Expr):
 
 @dataclass(frozen=True)
 class Clip(Expr):
-    """Elementwise clipping/saturation."""
 
     value: Expr
     lower: Expr
@@ -269,7 +258,6 @@ class Clip(Expr):
 
 @dataclass(frozen=True)
 class ControlLaw:
-    """Named control law such as `u = -Kx`."""
 
     output: Vector
     expression: Expr
@@ -289,7 +277,6 @@ class ControlLaw:
 
 
 class DynamicsKind(StrEnum):
-    """Supported linear-system dynamics forms."""
 
     CONTINUOUS = "continuous"
     DISCRETE = "discrete"
@@ -381,7 +368,6 @@ class LinearLayerIR:
 
 @dataclass(frozen=True)
 class ActivationLayerIR:
-    """Elementwise neural-network activation layer."""
 
     kind: RlLayerKind
     dim: int
@@ -409,7 +395,6 @@ RlLayerIR = LinearLayerIR | ActivationLayerIR
 
 @dataclass(frozen=True)
 class RlPolicyIR:
-    """Fixed-shape MLP policy for embedded inference."""
 
     name: str
     input_vector: Vector
@@ -453,7 +438,6 @@ class RlPolicyIR:
 
 @dataclass(frozen=True)
 class MpcControllerIR:
-    """Embedded-friendly finite-horizon MPC controller."""
 
     name: str
     state: Vector
@@ -551,38 +535,26 @@ def matvec(matrix: Expr, vector: Expr) -> MatVecMul:
 
 
 def add(left: Expr, right: Expr) -> Add:
-    """Create a validated addition node."""
-
     return Add(left=left, right=right)
 
 
 def sub(left: Expr, right: Expr) -> Sub:
-    """Create a validated subtraction node."""
-
     return Sub(left=left, right=right)
 
 
 def neg(value: Expr) -> Neg:
-    """Create a validated negation node."""
-
     return Neg(value=value)
 
 
 def scalar_mul(scalar: Expr | float, value: Expr) -> ScalarMul:
-    """Create a validated scalar multiplication node."""
-
     return ScalarMul(scalar=_coerce_bound(scalar), value=value)
 
 
 def zero(shape: Shape) -> Zero:
-    """Create a typed zero expression."""
-
     return Zero(value_shape=shape)
 
 
 def clip(value: Expr, lower: Expr | float, upper: Expr | float) -> Clip:
-    """Create a validated clipping/saturation node."""
-
     return Clip(value=value, lower=_coerce_bound(lower), upper=_coerce_bound(upper))
 
 

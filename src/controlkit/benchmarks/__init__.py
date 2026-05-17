@@ -1,4 +1,4 @@
-"""Latency benchmarking utilities."""
+#latency benchmarking utilities
 
 from __future__ import annotations
 

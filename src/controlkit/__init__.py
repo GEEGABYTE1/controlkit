@@ -1,4 +1,4 @@
-"""ControlKit public package metadata."""
+# ControlKit public package 
 
 from __future__ import annotations
 

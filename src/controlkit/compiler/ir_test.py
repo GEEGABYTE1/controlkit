@@ -10,11 +10,11 @@ if TYPE_CHECKING:
     from controlkit.policies.base import PolicyKind 
 
 class IRValidationError(ValueError):
-    """Raised when an IR node is malformed or shape-incompatible."""
+    # Raised when an IR node is malformed or shape-incompatible.
+    pass 
 
 
 class ValueKind(StrEnum):
-    """Kinds of values expressible in ControlKit IR."""
 
     SCALAR = "scalar"
     VECTOR = "vector"

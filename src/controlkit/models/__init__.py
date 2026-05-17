@@ -1,4 +1,4 @@
-"""Control-system model types."""
+# Control-system model types.
 
 from __future__ import annotations
 
