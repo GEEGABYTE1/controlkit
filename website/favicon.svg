@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="ControlKit controller favicon">
+  <rect width="64" height="64" rx="14" fill="#0d0f12"/>
+  <path d="M14 33h9l5-13 8 24 5-11h9" fill="none" stroke="#f7f7f2" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="23" cy="33" r="3.5" fill="#47d18c"/>
+  <circle cx="41" cy="33" r="3.5" fill="#7aa7ff"/>
+  <path d="M17 47h30" fill="none" stroke="#f7f7f2" stroke-width="3" stroke-linecap="round" opacity=".55"/>
+</svg>
