@@ -1,12 +1,8 @@
-"""Benchmark a small LQR controller and write JSON/Markdown reports.
+#Run from the repository root with:
+#PYTHONPATH=src python examples/benchmark_lqr.py
 
-Run from the repository root with:
-
-    PYTHONPATH=src python examples/benchmark_lqr.py
-"""
 
 from __future__ import annotations
-
 from pathlib import Path
 
 from controlkit.benchmarks import BenchmarkConfig, benchmark_module
