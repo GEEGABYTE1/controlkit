@@ -42,7 +42,7 @@ controlkit benchmark examples/rl_balance.yaml --output build/demo_benchmarks --n
 
 ## 6. Open The Website
 
-Open `website/index.html` in a browser. The page presents ControlKit as a product-style technical
-project and links to the GitHub repository:
+Open [https://controlkit.vercel.app/](https://controlkit.vercel.app/) in a browser. The page
+presents ControlKit as a product-style technical project and links to the GitHub repository:
 
 [https://github.com/GEEGABYTE1/controlkit](https://github.com/GEEGABYTE1/controlkit)

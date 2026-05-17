@@ -9,9 +9,11 @@ Start with:
 
 - [Architecture](compiler_architecture.md)
 - [Architecture Diagram](architecture_diagram.md)
+- [Benchmarks](benchmarks.md)
 - [Benchmark Summary](benchmark_summary.md)
+- [Verification](verification.md)
+- [ControlKit v1 Improvements](controlkit_v1_improvements.md)
 - [Demo Walkthrough](demo_walkthrough.md)
 - [Design Decisions](../design_decisions.md)
 - [Roadmap](../roadmap.md)
-- [Product Website](../website/index.html)
-- [Technical Blog](../blog/controlkit_v1.md)
+- [Product Website](https://controlkit.vercel.app/)
