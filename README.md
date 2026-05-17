@@ -3,7 +3,7 @@
 ControlKit is a high-performance control-system compiler CLI. It compiles LQR, MPC-lite, and small
 reinforcement-learning policies into deterministic C or Rust artifacts for embedded deployment.
 
-[Website](website/index.html)
+[Website](https://controlkit.vercel.app/)
 
 ## Quick Start
 
@@ -219,6 +219,28 @@ controlkit validate balance_policy.yaml
 controlkit compile balance_policy.yaml --target c --output build/balance_c
 controlkit benchmark balance_policy.yaml --output build/balance_bench --no-rust
 ```
+
+## Verification And Benchmark Suites
+
+Run static verification on a controller that includes system matrices:
+
+```bash
+controlkit verify benchmarks/double_integrator_lqr/controller.yaml
+```
+
+Run one closed-loop benchmark case:
+
+```bash
+controlkit benchmark benchmarks/double_integrator_lqr/controller.yaml
+```
+
+Run the full benchmark suite:
+
+```bash
+controlkit benchmark --all
+```
+
+Reports are written under `outputs/verification/` and `outputs/benchmarks/`.
 
 ## Current CLI
 
